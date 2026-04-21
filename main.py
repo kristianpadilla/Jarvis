@@ -27,7 +27,7 @@ RECORD_SECONDS = 5
 
 # Cooldown settings
 last_detected = 0
-COOLDOWN = 3
+COOLDOWN = 10
 
 def record_command():
     print("Listening for your command...")
@@ -55,7 +55,7 @@ def audio_callback(indata, frames, time_info, status):
 
     for mdl in owwModel.prediction_buffer.keys():
         scores = list(owwModel.prediction_buffer[mdl])
-        if scores[-1] > 0.5:
+        if scores[-1] > 0.7:
             current_time = time.time()
             if current_time - last_detected > COOLDOWN:
                 last_detected = current_time
