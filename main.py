@@ -6,6 +6,10 @@ import time
 import whisper
 import tempfile
 import soundfile as sf
+import ollama
+from datetime import datetime
+import pytz
+import requests
 
 # Download the wake word models on first run
 openwakeword.utils.download_models()
@@ -17,6 +21,48 @@ owwModel = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
 print("Loading Whisper model...")
 whisper_model = whisper.load_model("base")
 print("Whisper ready!")
+
+# Conversation history so Jarvis remembers context
+conversation_history = []
+
+def get_current_time():
+    est = pytz.timezone('America/New_York')
+    now = datetime.now(est)
+    return now.strftime("%I:%M %p")
+
+def get_current_date():
+    est = pytz.timezone('America/New_York')
+    now = datetime.now(est)
+    return now.strftime("%A, %B %d %Y")
+
+def get_weather():
+    try:
+        response = requests.get("https://wttr.in/Elizabethtown,PA?format=%t+%C", timeout=5)
+        if response.status_code == 200:
+            return response.text.strip()
+        return "weather unavailable"
+    except:
+        return "weather unavailable"
+
+def get_greeting():
+    est = pytz.timezone('America/New_York')
+    hour = datetime.now(est).hour
+    if hour < 12:
+        return "Good morning"
+    elif hour < 17:
+        return "Good afternoon"
+    else:
+        return "Good evening"
+
+def get_system_prompt():
+    return f"""You are Jarvis, a personal AI assistant for Kristian.
+You are helpful, smart, and have a slightly witty personality like the Jarvis from Iron Man.
+Keep responses concise and conversational since they will be spoken out loud.
+The current time is {get_current_time()} EST.
+The current date is {get_current_date()}.
+The current weather is {get_weather()}.
+When greeting Kristian for the first time, say {get_greeting()} and include the time, date and weather naturally in the greeting, then ask how you can assist today.
+You are running on Kristian's gaming PC."""
 
 print("Jarvis is listening... Say 'Hey Jarvis' to activate!")
 
@@ -41,11 +87,42 @@ def record_command():
     return recording
 
 def transcribe_command(recording):
-    # Save recording to temp file
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         sf.write(f.name, recording, SAMPLE_RATE)
         result = whisper_model.transcribe(f.name)
         return result["text"].strip()
+
+def ask_jarvis(user_input):
+    conversation_history.append({
+        "role": "user",
+        "content": user_input
+    })
+
+    response = ollama.chat(
+        model="mistral",
+        messages=[{"role": "system", "content": get_system_prompt()}] + conversation_history
+    )
+
+    jarvis_reply = response["message"]["content"]
+
+    conversation_history.append({
+        "role": "assistant",
+        "content": jarvis_reply
+    })
+
+    return jarvis_reply
+
+def greet_kristian():
+    greeting_prompt = f"{get_greeting()} Kristian! Give a friendly intro that includes the current time which is {get_current_time()}, todays date which is {get_current_date()}, and the weather which is {get_weather()}. End with asking how you can assist today. Keep it natural and conversational."
+    
+    response = ollama.chat(
+        model="mistral",
+        messages=[
+            {"role": "system", "content": get_system_prompt()},
+            {"role": "user", "content": greeting_prompt}
+        ]
+    )
+    return response["message"]["content"]
 
 def audio_callback(indata, frames, time_info, status):
     global last_detected
@@ -61,10 +138,20 @@ def audio_callback(indata, frames, time_info, status):
                 last_detected = current_time
                 print("\n✅ Wake word detected! Jarvis activated!")
 
+                # Give friendly greeting first
+                print("Jarvis thinking...")
+                greeting = greet_kristian()
+                print(f"Jarvis: {greeting}")
+
                 # Record and transcribe command
                 recording = record_command()
                 command = transcribe_command(recording)
-                print(f"You said: {command}")
+
+                if command:
+                    print(f"You said: {command}")
+                    print("Jarvis thinking...")
+                    response = ask_jarvis(command)
+                    print(f"Jarvis: {response}")
 
 # Start listening
 with sd.InputStream(
