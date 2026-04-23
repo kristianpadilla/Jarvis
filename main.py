@@ -58,35 +58,35 @@ HALLUCINATION_PHRASES = [
     "transcribed",
 ]
 
-# App paths
+# App paths loaded from .env
 APPS = {
-    "steam": "C:\\Program Files (x86)\\Steam\\steam.exe",
-    "discord": "C:\\Users\\krist\\AppData\\Local\\Discord\\app-1.0.9233\\Discord.exe",
-    "opera": "C:\\Users\\krist\\AppData\\Local\\Programs\\Opera GX\\opera.exe",
-    "opera gx": "C:\\Users\\krist\\AppData\\Local\\Programs\\Opera GX\\opera.exe",
+    "steam": os.getenv("STEAM_PATH"),
+    "discord": os.getenv("DISCORD_PATH"),
+    "opera": os.getenv("OPERA_PATH"),
+    "opera gx": os.getenv("OPERA_PATH"),
 }
 
-# Discord voice channel coordinates
+# Discord voice channel coordinates loaded from .env
 DISCORD_VOICE_CHANNELS = {
     "tfm": {
         "name": "Trained Flak Monkeys",
-        "folder": (35, 364),
-        "server": (38, 526),
-        "channel": (177, 617),
-        "join_button": (1223, 786)
+        "folder": (int(os.getenv("TFM_FOLDER_X")), int(os.getenv("TFM_FOLDER_Y"))),
+        "server": (int(os.getenv("TFM_SERVER_X")), int(os.getenv("TFM_SERVER_Y"))),
+        "channel": (int(os.getenv("TFM_CHANNEL_X")), int(os.getenv("TFM_CHANNEL_Y"))),
+        "join_button": (int(os.getenv("TFM_JOIN_X")), int(os.getenv("TFM_JOIN_Y")))
     }
 }
 
-# Discord text channel links
+# Discord text channel links loaded from .env
 DISCORD_CHANNELS = {
-    "tfm": {"name": "Trained Flak Monkeys", "url": "discord://channels/404778585375899650/738605488572203040"},
-    "trained flak monkeys": {"name": "Trained Flak Monkeys", "url": "discord://channels/404778585375899650/738605488572203040"},
-    "flak monkeys": {"name": "Trained Flak Monkeys", "url": "discord://channels/404778585375899650/738605488572203040"},
-    "nine": {"name": "Nine's Server", "url": "discord://channels/1266976590412382258/1480316294132797510"},
-    "nines server": {"name": "Nine's Server", "url": "discord://channels/1266976590412382258/1480316294132797510"},
-    "nine's server": {"name": "Nine's Server", "url": "discord://channels/1266976590412382258/1480316294132797510"},
-    "fppt": {"name": "FPPT Server", "url": "discord://channels/748331417821511731/1058581002617896971"},
-    "fppt server": {"name": "FPPT Server", "url": "discord://channels/748331417821511731/1058581002617896971"},
+    "tfm": {"name": "Trained Flak Monkeys", "url": os.getenv("TFM_CHANNEL_URL")},
+    "trained flak monkeys": {"name": "Trained Flak Monkeys", "url": os.getenv("TFM_CHANNEL_URL")},
+    "flak monkeys": {"name": "Trained Flak Monkeys", "url": os.getenv("TFM_CHANNEL_URL")},
+    "nine": {"name": "Nine's Server", "url": os.getenv("NINE_CHANNEL_URL")},
+    "nines server": {"name": "Nine's Server", "url": os.getenv("NINE_CHANNEL_URL")},
+    "nine's server": {"name": "Nine's Server", "url": os.getenv("NINE_CHANNEL_URL")},
+    "fppt": {"name": "FPPT Server", "url": os.getenv("FPPT_CHANNEL_URL")},
+    "fppt server": {"name": "FPPT Server", "url": os.getenv("FPPT_CHANNEL_URL")},
 }
 
 # All the ways Whisper might mishear Discord
@@ -219,25 +219,16 @@ def join_discord_voice(channel_key):
         return False
 
     coords = DISCORD_VOICE_CHANNELS[channel_key]
-
-    # Launch Discord first
     subprocess.Popen([APPS["discord"]])
     time.sleep(6)
 
     try:
-        # Click the folder to open it
         pyautogui.click(coords["folder"])
         time.sleep(1)
-
-        # Click the server icon
         pyautogui.click(coords["server"])
         time.sleep(1.5)
-
-        # Click the voice channel
         pyautogui.click(coords["channel"])
         time.sleep(1.5)
-
-        # Click the join voice button
         pyautogui.click(coords["join_button"])
         return True
     except Exception as e:
@@ -263,12 +254,10 @@ def gaming_mode():
 def handle_command(command):
     command_lower = command.lower()
 
-    # Gaming mode
     if "gaming mode" in command_lower:
         gaming_mode()
         return "Gaming mode activated. Launching your setup, Nine."
 
-    # Discord voice channel join commands
     if is_discord_command(command_lower) and ("join" in command_lower or "voice" in command_lower):
         for key in DISCORD_VOICE_CHANNELS:
             if key in command_lower:
@@ -277,7 +266,6 @@ def handle_command(command):
                 return f"Joining {channel_name} voice channel now."
         return "Which voice channel would you like to join, Nine?"
 
-    # Discord text channel commands
     if is_discord_command(command_lower) and ("open" in command_lower or "launch" in command_lower):
         for key in DISCORD_CHANNELS:
             if key in command_lower:
@@ -287,18 +275,15 @@ def handle_command(command):
         open_app("discord")
         return "Opening Discord."
 
-    # Just open Discord
     if is_discord_command(command_lower):
         open_app("discord")
         return "Opening Discord."
 
-    # Open app commands
     for app in APPS:
         if app in command_lower and ("open" in command_lower or "launch" in command_lower or "start" in command_lower):
             open_app(app)
             return f"Opening {app}."
 
-    # Open website commands
     if "open" in command_lower or "go to" in command_lower or "pull up" in command_lower:
         sites = {
             "youtube": "https://www.youtube.com",
