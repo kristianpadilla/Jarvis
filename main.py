@@ -3,10 +3,10 @@ import sounddevice as sd
 import numpy as np
 from openwakeword.model import Model
 import time
-import whisper
 import tempfile
 import soundfile as sf
-import ollama
+import anthropic
+from groq import Groq
 from datetime import datetime
 import pytz
 import requests
@@ -20,6 +20,8 @@ import threading
 import glob
 import webbrowser
 import pyautogui
+import keyboard
+import sys
 
 # Load environment variables
 load_dotenv()
@@ -27,23 +29,28 @@ load_dotenv()
 # Initialize ElevenLabs
 el_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 
+# Initialize Anthropic Claude client
+claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
+
+# Initialize Groq client for STT
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
 # Download the wake word models on first run
 openwakeword.utils.download_models()
 
-# Load the hey jarvis wake word model
+# Load the hey jarvis wake word model as backup trigger
 owwModel = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
 
-# Load Whisper model
-print("Loading Whisper model...")
-whisper_model = whisper.load_model("base")
-print("Whisper ready!")
+print("Cypher systems online...")
 
 # Conversation history
 conversation_history = []
 
 # Session state
 greeted = False
-jarvis_active = False
+cypher_active = False
+cypher_stopped = False
+cypher_muted = False
 interaction_lock = threading.Lock()
 
 # Only block obvious hallucinations not real sentences
@@ -57,6 +64,14 @@ HALLUCINATION_PHRASES = [
     "subtitles",
     "transcribed",
 ]
+
+# Named locations for quick weather lookups
+NAMED_LOCATIONS = {
+    "home": "Marietta,PA",
+    "marietta": "Marietta,PA",
+    "chiang mai": "Chiang+Mai,Thailand",
+    "thailand": "Chiang+Mai,Thailand",
+}
 
 # App paths loaded from .env
 APPS = {
@@ -103,13 +118,119 @@ EXIT_PHRASES = [
     "no thank you", "no thanks", "i'm done", "im done"
 ]
 
+# ─────────────────────────────────────────────
+# SPORTS SCHEDULE
+# ─────────────────────────────────────────────
+
+FAVORITE_TEAMS = [
+    {"name": "Tampa Bay Rays",       "sport": "mlb",   "search_name": "Tampa Bay Rays"},
+    {"name": "Tampa Bay Buccaneers", "sport": "nfl",   "search_name": "Tampa Bay Buccaneers"},
+    {"name": "Orlando Magic",        "sport": "nba",   "search_name": "Orlando Magic"},
+    {"name": "Tampa Bay Lightning",  "sport": "nhl",   "search_name": "Tampa Bay Lightning"},
+    {"name": "Oregon Ducks",         "sport": "ncaaf", "search_name": "Oregon"},
+]
+
+SPORT_ENDPOINTS = {
+    "mlb":   "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard",
+    "nfl":   "https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard",
+    "nba":   "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard",
+    "nhl":   "https://site.api.espn.com/apis/site/v2/sports/hockey/nhl/scoreboard",
+    "ncaaf": "https://site.api.espn.com/apis/site/v2/sports/football/college-football/scoreboard",
+}
+
+def get_todays_games():
+    est = pytz.timezone('America/New_York')
+    today = datetime.now(est).strftime("%Y%m%d")
+    games_today = []
+
+    for team in FAVORITE_TEAMS:
+        sport = team["sport"]
+        search_name = team["search_name"]
+        team_name = team["name"]
+
+        try:
+            url = f"{SPORT_ENDPOINTS[sport]}?dates={today}"
+            response = requests.get(url, timeout=5)
+            if response.status_code != 200:
+                continue
+
+            data = response.json()
+            events = data.get("events", [])
+
+            for event in events:
+                competitors = event.get("competitions", [{}])[0].get("competitors", [])
+                team_names_in_game = [c.get("team", {}).get("displayName", "") for c in competitors]
+
+                matched = any(search_name.lower() in name.lower() for name in team_names_in_game)
+
+                if matched:
+                    raw_time = event.get("date", "")
+                    game_time = "TBD"
+                    if raw_time:
+                        try:
+                            utc_time = datetime.strptime(raw_time, "%Y-%m-%dT%H:%MZ")
+                            utc_time = pytz.utc.localize(utc_time)
+                            est_time = utc_time.astimezone(est)
+                            game_time = est_time.strftime("%I:%M %p").lstrip("0")
+                        except:
+                            game_time = "TBD"
+
+                    opponent = "Unknown"
+                    home_away = "away"
+                    for c in competitors:
+                        c_name = c.get("team", {}).get("displayName", "")
+                        if search_name.lower() not in c_name.lower():
+                            opponent = c_name
+                        else:
+                            home_away = "home" if c.get("homeAway", "") == "home" else "away"
+
+                    games_today.append({
+                        "team": team_name,
+                        "opponent": opponent,
+                        "time": game_time,
+                        "home_away": home_away,
+                        "sport": sport
+                    })
+
+        except Exception as e:
+            print(f"Sports API error for {team_name}: {e}")
+            continue
+
+    return games_today
+
+def format_sports_for_greeting(games):
+    if not games:
+        return None
+
+    lines = []
+    for game in games:
+        team = game["team"]
+        opponent = game["opponent"]
+        game_time = game["time"]
+        home_away = game["home_away"]
+
+        if home_away == "home":
+            lines.append(f"the {team} host the {opponent} at {game_time}")
+        else:
+            lines.append(f"the {team} face the {opponent} at {game_time}")
+
+    if len(lines) == 1:
+        return f"On the schedule today — {lines[0]}."
+    elif len(lines) == 2:
+        return f"On the schedule today — {lines[0]}, and {lines[1]}."
+    else:
+        joined = ", ".join(lines[:-1]) + f", and {lines[-1]}"
+        return f"On the schedule today — {joined}."
+
+# ─────────────────────────────────────────────
+
 def cleanup_audio_files():
-    for f in glob.glob("jarvis_*.mp3"):
+    for f in glob.glob("cypher_*.mp3"):
         try:
             os.remove(f)
         except:
             pass
-    for f in glob.glob("jarvis_*.wav"):
+    for f in glob.glob("cypher_*.wav"):
         try:
             os.remove(f)
         except:
@@ -123,6 +244,11 @@ def is_hallucination(text):
         if phrase in text_lower:
             return True
     if re.match(r'^[\d\s\.\%\,]+$', text_lower):
+        return True
+    if re.search(r'[^\x00-\x7F]', text):
+        return True
+    alpha_count = sum(1 for c in text if c.isalpha())
+    if len(text) > 5 and alpha_count / len(text) < 0.3:
         return True
     return False
 
@@ -138,30 +264,46 @@ def get_current_date():
     day = now.strftime("%d").lstrip("0")
     return f"{month}/{day}"
 
-def get_weather():
+def get_weather(location="Marietta,PA"):
     try:
-        response = requests.get("https://wttr.in/Elizabethtown,PA?format=%t+%C", timeout=5)
+        response = requests.get(f"https://wttr.in/{location}?format=%t+%C", timeout=5)
         if response.status_code == 200:
-            return response.text.strip().replace("+", "").replace("°", " degrees")
+            raw = response.text.strip()
+            raw = raw.encode('ascii', 'ignore').decode('ascii')
+            raw = re.sub(r'([+-]?\d+)F', r'\1 degrees', raw)
+            raw = raw.replace("+", "").replace("°", " degrees").replace("Â", "").strip()
+            return raw
         return "weather unavailable"
     except:
         return "weather unavailable"
 
-def get_greeting():
-    est = pytz.timezone('America/New_York')
-    hour = datetime.now(est).hour
-    if hour < 12:
-        return "Good morning"
-    elif hour < 17:
-        return "Good afternoon"
-    else:
-        return "Good evening"
+def get_location_weather(command_lower):
+    for key in NAMED_LOCATIONS:
+        if key in command_lower:
+            location = NAMED_LOCATIONS[key]
+            weather = get_weather(location)
+            display_name = key.title()
+            return f"Weather in {display_name}: {weather}"
+
+    weather_triggers = ["weather in", "weather for", "temperature in", "how is it in", "what's it like in"]
+    for trigger in weather_triggers:
+        if trigger in command_lower:
+            city = command_lower.split(trigger)[-1].strip()
+            if city:
+                formatted_city = city.replace(" ", "+")
+                weather = get_weather(formatted_city)
+                return f"Weather in {city.title()}: {weather}"
+
+    return None
 
 def get_system_prompt():
-    return f"""You are Jarvis, a personal AI assistant for Nine.
-You are sharp, direct and informative. You get to the point immediately.
-Your personality is like the Jarvis from Iron Man - calm, composed, occasionally dry and witty but never corny or theatrical.
-Wit is rare and subtle, not forced. Never use catchphrases, never be cheesy.
+    weather = get_weather()
+    weather_line = f"The current weather at home is {weather}." if weather != "weather unavailable" else "Weather data is currently unavailable."
+    return f"""You are Cypher, a personal AI assistant for Nine.
+You are a sleek, advanced AI with a cyberpunk edge. Sharp, direct and efficient.
+You operate like a high end neural network with personality — think Night City corporate AI meets street level hacker intelligence.
+You are calm, composed and precise. Occasionally dry and witty but never corny or theatrical.
+Wit is rare and subtle, never forced. You don't do catchphrases.
 IMPORTANT RULES:
 - Never use asterisks or action descriptions like *opens app* or *sound plays*
 - Never use theatrical countdown sequences
@@ -170,7 +312,7 @@ IMPORTANT RULES:
 - Be direct first, informative always, occasionally witty but sparingly
 - Never remind Nine who you are, what your name is, or that you are an AI
 - Never mention that you are running on Nine's gaming PC
-- Never say things like "I am Jarvis" or "as your assistant" or "I am here to help"
+- Never say things like "I am Cypher" or "as your assistant" or "I am here to help"
 - Never pretend to do things you cannot actually do
 - If something is unavailable just say so simply and move on
 - Never repeat information Nine already knows about himself or his setup
@@ -178,12 +320,21 @@ IMPORTANT RULES:
 - Never use the degrees symbol, always write the word degrees instead
 - Never use ordinal suffixes like 1st, 2nd, 3rd, 22nd in dates, just use the plain number
 - Never use the same sign off or closing phrase twice in a row
-- Vary any closing remarks naturally, do not repeat phrases like stay dry back to back
+- Vary any closing remarks naturally
 - If you have already mentioned weather advice in this conversation do not repeat it
+- Occasionally use Night City slang naturally throughout conversation — words like choom, preem, flatline, netrunner, corpo. Use them only where they fit organically, never forced or excessive. One every few exchanges at most.
+STRICT CAPABILITY LIMITS — NEVER BREAK THESE:
+- You cannot send messages, emails, or texts of any kind
+- You cannot access, transfer, or interact with any bank accounts or financial systems
+- You cannot make purchases or process payments
+- You cannot access any accounts, passwords, or personal credentials
+- You cannot browse the internet or retrieve live information beyond what is already provided to you
+- You cannot control any hardware, smart home devices, or external systems not explicitly coded
+- If asked to do any of the above, respond simply: "That's outside what I can do, Nine." Do not roleplay or simulate the action under any circumstances
 Always refer to the user as Nine.
-The current time is {get_current_time()} Eastern Standard Time.
+The current time is {get_current_time()}. Never say Eastern Standard Time or EST. If another timezone is needed say Eastern, Central, Mountain, or Pacific instead.
 The current date is {get_current_date()}.
-The current weather is {get_weather()}.
+{weather_line}
 You are running on Nine's gaming PC."""
 
 def clean_text_for_speech(text):
@@ -258,6 +409,10 @@ def handle_command(command):
         gaming_mode()
         return "Gaming mode activated. Launching your setup, Nine."
 
+    weather_response = get_location_weather(command_lower)
+    if weather_response:
+        return weather_response
+
     if is_discord_command(command_lower) and ("join" in command_lower or "voice" in command_lower):
         for key in DISCORD_VOICE_CHANNELS:
             if key in command_lower:
@@ -303,15 +458,16 @@ def handle_command(command):
     return None
 
 def speak(text):
+    global cypher_stopped
     text = clean_text_for_speech(text)
-    print(f"Jarvis: {text}")
+    print(f"Cypher: {text}")
     filepath = None
     wav_path = None
     try:
         audio = el_client.text_to_speech.convert(
-            voice_id="onwK4e9ZLuTAKqWW03F9",
+            voice_id=os.getenv("ELEVENLABS_VOICE_ID"),
             text=text,
-            model_id="eleven_turbo_v2_5",
+            model_id="eleven_multilingual_v2",
             voice_settings={
                 "stability": 0.3,
                 "similarity_boost": 0.75,
@@ -320,7 +476,7 @@ def speak(text):
             }
         )
 
-        filename = f"jarvis_{uuid.uuid4().hex}.mp3"
+        filename = f"cypher_{uuid.uuid4().hex}.mp3"
         filepath = os.path.join(os.getcwd(), filename)
         wav_path = filepath.replace(".mp3", ".wav")
 
@@ -335,7 +491,20 @@ def speak(text):
         ], capture_output=True)
 
         data, samplerate = sf.read(wav_path)
+
+        if cypher_stopped:
+            print("Cypher cut off before playback.")
+            return
+
         sd.play(data, samplerate)
+
+        while sd.get_stream().active:
+            if cypher_stopped:
+                sd.stop()
+                print("Cypher cut off mid-sentence.")
+                return
+            time.sleep(0.05)
+
         sd.wait()
 
     except Exception as e:
@@ -352,43 +521,81 @@ def speak(text):
             except:
                 pass
 
-def greet_nine():
-    greeting_prompt = f"Give a brief, sharp and natural greeting to Nine. Include the time which is {get_current_time()} Eastern Standard Time and the weather which is {get_weather()}. End by asking how you can help. Be direct and natural, no theatrics. Do not mention the date at all. Do not introduce yourself or mention your name."
-
-    response = ollama.chat(
-        model="mistral",
-        messages=[
-            {"role": "system", "content": get_system_prompt()},
-            {"role": "user", "content": greeting_prompt}
-        ]
-    )
-    return response["message"]["content"]
-
-def transcribe_command(recording):
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
-        sf.write(f.name, recording, SAMPLE_RATE)
-        result = whisper_model.transcribe(f.name)
-        return result["text"].strip()
-
-def ask_jarvis(user_input):
+def ask_cypher(user_input):
     conversation_history.append({
         "role": "user",
         "content": user_input
     })
 
-    response = ollama.chat(
-        model="mistral",
-        messages=[{"role": "system", "content": get_system_prompt()}] + conversation_history
+    response = claude.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=300,
+        system=get_system_prompt(),
+        messages=conversation_history
     )
 
-    jarvis_reply = response["message"]["content"]
+    cypher_reply = response.content[0].text
 
     conversation_history.append({
         "role": "assistant",
-        "content": jarvis_reply
+        "content": cypher_reply
     })
 
-    return jarvis_reply
+    return cypher_reply
+
+def greet_nine():
+    weather = get_weather()
+    games = get_todays_games()
+    sports_line = format_sports_for_greeting(games)
+
+    weather_part = f"the weather is {weather}" if weather != "weather unavailable" else ""
+    sports_part = sports_line if sports_line else ""
+
+    context_parts = [p for p in [weather_part, sports_part] if p]
+    context_block = ". ".join(context_parts)
+
+    greeting_prompt = (
+        f"Give a brief, sharp and natural greeting to Nine. "
+        f"Open with a casual cyberpunk acknowledgment — use Night City slang like 'choom', 'you're back', or similar flavor. Just one short natural line before getting into the info. "
+        f"Then include the time which is {get_current_time()}. Do not say any timezone label for the local time. "
+        f"{context_block}. "
+        f"If there is sports info include it naturally and conversationally — do not list it like a schedule, weave it in. "
+        f"End by asking how you can help. "
+        f"Be direct and natural, cyberpunk edge, no theatrics. "
+        f"Do not mention the date. Do not introduce yourself or mention your name."
+    )
+
+    response = claude.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=200,
+        system=get_system_prompt(),
+        messages=[{"role": "user", "content": greeting_prompt}]
+    )
+
+    return response.content[0].text
+
+def transcribe_command(recording):
+    """Transcribe audio using Groq cloud STT — fast and accurate."""
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+        sf.write(f.name, recording, SAMPLE_RATE)
+        tmp_path = f.name
+
+    try:
+        with open(tmp_path, "rb") as audio_file:
+            transcription = groq_client.audio.transcriptions.create(
+                model="whisper-large-v3-turbo",
+                file=audio_file,
+                response_format="text"
+            )
+        return transcription.strip() if transcription else ""
+    except Exception as e:
+        print(f"Groq transcription error: {e}")
+        return ""
+    finally:
+        try:
+            os.remove(tmp_path)
+        except:
+            pass
 
 def record_command():
     print("Listening for your command...")
@@ -402,18 +609,20 @@ def record_command():
     return recording
 
 def handle_interaction():
-    global greeted, jarvis_active
+    global greeted, cypher_active, cypher_stopped
 
     with interaction_lock:
-        if jarvis_active:
+        if cypher_active:
             return
-        jarvis_active = True
+        cypher_active = True
+
+    cypher_stopped = False
 
     try:
         cleanup_audio_files()
 
         if not greeted:
-            print("Jarvis thinking...")
+            print("Cypher thinking...")
             greeting = greet_nine()
             speak(greeting)
             greeted = True
@@ -421,6 +630,15 @@ def handle_interaction():
         follow_up_deadline = time.time() + 30
 
         while time.time() < follow_up_deadline:
+
+            if cypher_stopped:
+                print("Cypher session cut off.")
+                break
+
+            if cypher_muted:
+                print("Cypher muted — ending session.")
+                break
+
             recording = record_command()
             command = transcribe_command(recording)
 
@@ -431,41 +649,103 @@ def handle_interaction():
 
                 print(f"You said: {command}")
 
+                if cypher_muted:
+                    print("Muted mid-command. Discarding.")
+                    break
+
                 if is_exit_phrase(command):
                     speak("Of course. Standing by.")
-                    print("Jarvis standing by...")
+                    print("Cypher standing by...")
                     break
 
                 action_response = handle_command(command)
                 if action_response:
                     speak(action_response)
                 else:
-                    print("Jarvis thinking...")
-                    response = ask_jarvis(command)
+                    print("Cypher thinking...")
+                    response = ask_cypher(command)
                     speak(response)
 
                 follow_up_deadline = time.time() + 30
 
-        print("Jarvis standing by...")
+        print("Cypher standing by...")
 
     finally:
-        jarvis_active = False
+        cypher_active = False
 
-print("Jarvis is listening... Say 'Hey Jarvis' to activate!")
+# ─────────────────────────────────────────────
+# STREAM DECK HOTKEY LISTENERS
+# ─────────────────────────────────────────────
+
+def on_activate_hotkey():
+    global last_detected, cypher_active
+    if not cypher_active and not cypher_muted:
+        print("\n✅ Cypher activated via Stream Deck!")
+        last_detected = time.time()
+        threading.Thread(target=handle_interaction, daemon=True).start()
+    elif cypher_muted:
+        print("Cypher is muted. Unmute first.")
+    else:
+        print("Cypher is already active.")
+
+def on_stop_hotkey():
+    global cypher_stopped
+    print("\n🔴 Cypher cut off via Stream Deck.")
+    cypher_stopped = True
+    sd.stop()
+
+def on_mute_hotkey():
+    global cypher_muted, cypher_stopped
+    cypher_muted = not cypher_muted
+    if cypher_muted:
+        cypher_stopped = True
+        sd.stop()
+        print("\n🔇 Cypher muted — session ended.")
+    else:
+        cypher_stopped = False
+        print("\n🔊 Cypher unmuted.")
+
+def on_restart_hotkey():
+    print("\n🔄 Restarting Cypher...")
+    sd.stop()
+    os.execv(sys.executable, [sys.executable] + sys.argv)
+
+def on_kill_hotkey():
+    print("\n🛑 Cypher shutting down.")
+    sd.stop()
+    cleanup_audio_files()
+    os.kill(os.getpid(), 9)
+
+keyboard.add_hotkey("ctrl+shift+space", on_activate_hotkey)
+keyboard.add_hotkey("ctrl+shift+x", on_stop_hotkey)
+keyboard.add_hotkey("ctrl+shift+m", on_mute_hotkey)
+keyboard.add_hotkey("ctrl+shift+r", on_restart_hotkey)
+keyboard.add_hotkey("ctrl+shift+q", on_kill_hotkey)
+
+print("Stream Deck hotkeys registered:")
+print("  ctrl+shift+space → Activate Cypher")
+print("  ctrl+shift+x     → Cut off Cypher")
+print("  ctrl+shift+m     → Mute / Unmute Cypher")
+print("  ctrl+shift+r     → Restart Cypher")
+print("  ctrl+shift+q     → Kill Cypher")
+
+# ─────────────────────────────────────────────
+
+print("Cypher is online... Say 'Hey Jarvis' to activate!")
 
 # Audio settings
 CHUNK = 1280
 SAMPLE_RATE = 16000
-RECORD_SECONDS = 5
+RECORD_SECONDS = 8
 
 # Cooldown settings
 last_detected = 0
 COOLDOWN = 10
 
 def audio_callback(indata, frames, time_info, status):
-    global last_detected, jarvis_active
+    global last_detected, cypher_active
 
-    if jarvis_active:
+    if cypher_active or cypher_muted:
         return
 
     audio_data = np.frombuffer(indata, dtype=np.int16)
@@ -477,7 +757,7 @@ def audio_callback(indata, frames, time_info, status):
             current_time = time.time()
             if current_time - last_detected > COOLDOWN:
                 last_detected = current_time
-                print("\n✅ Wake word detected! Jarvis activated!")
+                print("\n✅ Cypher activated!")
                 threading.Thread(target=handle_interaction, daemon=True).start()
 
 # Start listening
@@ -488,6 +768,6 @@ with sd.InputStream(
     blocksize=CHUNK,
     callback=audio_callback
 ):
-    print("Microphone active. Press Ctrl+C to stop.")
+    print("Cypher standing by...")
     while True:
         sd.sleep(1000)
