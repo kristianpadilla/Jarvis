@@ -1,419 +1,134 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Cypher</title>
-  <style>
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: #000; overflow: hidden; width: 100vw; height: 100vh;
-    font-family: 'Courier New', monospace;
-  }
+<meta charset="UTF-8">
+<title>Cypher</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#000; overflow:hidden; width:100vw; height:100vh; font-family:'Courier New',monospace; }
 
-  /* ─── CANVAS ─── */
-  #canvas-container { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 2; }
-  #three-canvas { width: 100%; height: 100%; display: block;
-    filter: hue-rotate(140deg) saturate(2.2) brightness(0.75); }
-  #scanline-canvas { position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none; z-index: 1; }
+#canvas-container { position:fixed; top:0; left:0; width:100%; height:100%; z-index:2; }
+#three-canvas { width:100%; height:100%; display:block; filter:hue-rotate(140deg) saturate(2.2) brightness(0.75); }
+#scanline-canvas { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; }
+#hud { position:fixed; top:0; left:0; width:100%; height:100%; z-index:10; pointer-events:none; }
 
-  /* ─── HUD OVERLAY ─── */
-  #hud { position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    z-index: 10; pointer-events: none; background: transparent; }
+/* ─── CYPHER FRAME ─── */
+#cypher-frame { position:absolute; left:50%; transform:translateX(-50%); top:30px; bottom:80px; width:420px; border:1px solid rgba(255,60,180,0.2); pointer-events:none; z-index:11; }
+#cypher-frame::before,#cypher-frame::after,#cypher-frame .corner-bl,#cypher-frame .corner-tr { content:''; position:absolute; width:16px; height:16px; border-color:rgba(0,200,255,0.7); border-style:solid; }
+#cypher-frame::before { top:-1px; left:-1px; border-width:2px 0 0 2px; }
+#cypher-frame::after  { top:-1px; right:-1px; border-width:2px 2px 0 0; }
+#cypher-frame .corner-bl { bottom:-1px; left:-1px; border-width:0 0 2px 2px; }
+#cypher-frame .corner-tr { bottom:-1px; right:-1px; border-width:0 2px 2px 0; }
+#cypher-frame .frame-title { position:absolute; top:-1px; left:50%; transform:translateX(-50%); background:rgba(2,4,12,0.95); border:1px solid rgba(255,60,180,0.2); border-top:none; padding:3px 16px; font-size:8px; letter-spacing:0.2em; color:rgba(0,200,255,0.7); white-space:nowrap; }
+#cypher-frame .side-left,#cypher-frame .side-right { position:absolute; top:50%; transform:translateY(-50%); width:1px; height:40%; background:linear-gradient(to bottom,transparent,rgba(0,200,255,0.3),transparent); }
+#cypher-frame .side-left { left:-1px; } #cypher-frame .side-right { right:-1px; }
 
-  /* Corner bracket mixin via pseudo */
-  .panel {
-    position: absolute;
-    background: rgba(2,4,12,0.88);
-    border: 1px solid rgba(255,60,180,0.25);
-    backdrop-filter: blur(8px);
-  }
-  .panel::before, .panel::after {
-    content: '';
-    position: absolute;
-    width: 10px; height: 10px;
-    border-color: rgba(0,200,255,0.8);
-    border-style: solid;
-  }
-  .panel::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
-  .panel::after  { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
+/* ─── TERMINAL & WAVEFORM ─── */
+#cypher-terminal { position:absolute; left:50%; transform:translateX(-50%); top:38px; width:380px; background:rgba(2,4,12,0.7); border-bottom:1px solid rgba(255,60,180,0.15); max-height:80px; overflow:hidden; z-index:12; }
+#log { height:80px; overflow-y:auto; padding:4px 10px; scrollbar-width:none; }
+.log-entry { font-size:10px; margin-bottom:4px; line-height:1.4; }
+.log-nine   { color:rgba(0,200,255,0.9); }
+.log-cypher { color:rgba(255,200,230,0.9); }
+.log-system { color:rgba(255,80,180,0.6); font-size:9px; letter-spacing:0.1em; }
+#cypher-speech-indicator { position:absolute; left:50%; transform:translateX(-50%); bottom:38px; width:380px; z-index:12; display:flex; flex-direction:column; align-items:center; gap:4px; }
+#cypher-waveform-canvas { width:380px; height:40px; }
+#cypher-status { display:flex; align-items:center; gap:6px; background:rgba(2,4,12,0.8); border:1px solid rgba(255,60,180,0.2); padding:3px 14px; font-size:9px; letter-spacing:0.18em; color:rgba(255,200,230,0.7); }
+#status-dot { width:6px; height:6px; border-radius:50%; background:rgba(255,80,180,0.8); box-shadow:0 0 6px rgba(255,80,180,0.6); }
+#term-dot{display:none;} #term-status{display:none;} #terminal{display:none;}
+#status-indicator{display:none;} #waveform-container{display:none;} #bottom-center{display:none;}
+#stats-panel{display:none;} #location-panel{display:none;}
 
-  .panel-title {
-    font-size: 8px; letter-spacing: 0.2em;
-    color: rgba(0,200,255,0.6);
-    border-bottom: 1px solid rgba(255,60,180,0.15);
-    padding: 5px 10px;
-  }
-  .panel-body { padding: 8px 10px; }
+/* ─── HUD WIDGET ─── */
+.hw { background:rgba(2,4,12,0.92); border:1px solid rgba(255,60,180,0.25); position:relative; overflow:hidden; flex-shrink:0; }
+.hw::before { content:''; position:absolute; top:-1px; left:-1px; width:10px; height:10px; border-top:2px solid rgba(0,200,255,0.7); border-left:2px solid rgba(0,200,255,0.7); }
+.hw::after  { content:''; position:absolute; bottom:-1px; right:-1px; width:10px; height:10px; border-bottom:2px solid rgba(0,200,255,0.7); border-right:2px solid rgba(0,200,255,0.7); }
+.hw-title { font-size:8px; letter-spacing:0.2em; color:rgba(0,200,255,0.6); padding:5px 10px; border-bottom:1px solid rgba(255,60,180,0.15); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
 
-  /* ─── TOP CENTER TITLE ─── */
-  #hud-title {
-    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-    background: rgba(2,4,12,0.88);
-    border: 1px solid rgba(255,60,180,0.25);
-    border-top: none;
-    padding: 6px 30px;
-    font-size: 11px; letter-spacing: 0.25em;
-    color: rgba(255,200,230,0.9);
-  }
+/* ─── LEFT PANEL — stretches to Cypher frame edge ─── */
+#home-left-panel {
+  position:absolute;
+  top:30px; bottom:10px; left:10px;
+  width:calc(50% - 222px);
+  display:flex; flex-direction:column; gap:5px;
+  z-index:10; pointer-events:all;
+  transition:opacity 0.4s ease;
+  overflow:hidden;
+}
+#home-left-panel.hidden { opacity:0; pointer-events:none; }
 
-  /* ─── LOCATION PANEL (top left) ─── */
-  #location-panel {
-    top: 10px; left: 10px; width: 230px;
-    transition: opacity 0.4s ease;
-  }
-  .loc-block {
-    padding: 6px 10px;
-    border-bottom: 1px solid rgba(255,60,180,0.1);
-  }
-  .loc-block:last-child { border-bottom: none; }
-  .loc-name { font-size: 8px; letter-spacing: 0.15em; color: rgba(0,200,255,0.6); margin-bottom: 2px; }
-  .loc-time { font-size: 22px; letter-spacing: 0.05em; color: rgba(255,200,230,0.95); font-weight: bold; line-height: 1; }
-  .loc-row { display: flex; gap: 8px; align-items: baseline; margin-top: 3px; }
-  .loc-temp { font-size: 15px; color: rgba(255,200,230,0.85); font-weight: bold; }
-  .loc-desc { font-size: 9px; color: rgba(255,80,180,0.7); letter-spacing: 0.06em; }
-  .loc-date { font-size: 9px; color: rgba(255,80,180,0.5); letter-spacing: 0.08em; margin-top: 2px; }
+/* donut cell */
+.donut-cell { display:flex; flex-direction:column; align-items:center; justify-content:center; padding:6px 4px; border-right:1px solid rgba(255,60,180,0.1); }
+.donut-cell:last-child { border-right:none; }
+.donut-label { font-size:7px; letter-spacing:0.16em; color:rgba(255,80,180,0.6); margin-top:3px; }
+.donut-val { font-size:12px; font-weight:bold; color:rgba(255,200,230,0.95); line-height:1; margin-top:2px; }
+.donut-sub { font-size:7px; color:rgba(255,200,230,0.3); margin-top:1px; text-align:center; max-width:90px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-  /* ─── STATS PANEL (bottom left) ─── */
-  #stats-panel {
-    bottom: 10px; left: 10px; width: 230px;
-    transition: opacity 0.4s ease;
-  }
-  .stat-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-  .stat-row:last-child { margin-bottom: 0; }
-  .stat-label { font-size: 9px; color: rgba(255,80,180,0.7); letter-spacing: 0.1em; width: 28px; }
-  .stat-bar-wrap { flex: 1; height: 3px; background: rgba(255,60,180,0.1); border-radius: 2px; overflow: hidden; }
-  .stat-bar { height: 100%; border-radius: 2px; background: rgba(255,80,180,0.7); transition: width 0.5s ease; }
-  .stat-value { font-size: 10px; color: rgba(255,200,230,0.9); min-width: 34px; text-align: right; }
+/* ─── RIGHT PANEL — mirrors left ─── */
+#home-right-panel {
+  position:absolute;
+  top:30px; bottom:10px;
+  left:calc(50% + 222px); right:10px;
+  display:flex; flex-direction:column; gap:5px;
+  z-index:10; pointer-events:all;
+  transition:opacity 0.4s ease;
+}
+#home-right-panel.hidden { opacity:0; pointer-events:none; }
 
-  /* ─── STATUS + WAVEFORM (bottom center) ─── */
-  #bottom-center {
-    position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
-    display: flex; flex-direction: column; align-items: center; gap: 6px;
-  }
-  #waveform-container { width: 420px; height: 52px; }
-  #waveform-canvas { width: 100%; height: 100%; }
-  #status-indicator {
-    display: flex; align-items: center; gap: 6px;
-    background: rgba(2,4,12,0.88);
-    border: 1px solid rgba(255,60,180,0.2);
-    padding: 4px 14px;
-  }
-  #status-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: rgba(255,80,180,0.8);
-    box-shadow: 0 0 6px rgba(255,80,180,0.6);
-  }
-  #status-label { font-size: 9px; letter-spacing: 0.18em; color: rgba(255,200,230,0.7); }
+/* Globe */
+#globe-widget { height:340px; flex-shrink:0; display:flex; flex-direction:column; }
+#globe-main-row { display:flex; flex:1; min-height:0; }
+#globe-left { width:50%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:6px; border-right:1px solid rgba(255,60,180,0.15); }
+#globeHomeCanvas { display:block; cursor:grab; } #globeHomeCanvas:active { cursor:grabbing; }
+#globe-right { flex:1; display:flex; flex-direction:column; min-width:0; }
+#globe-country-label { font-size:9px; color:rgba(0,200,255,0.6); letter-spacing:0.12em; padding:5px 10px; border-bottom:1px solid rgba(255,60,180,0.08); flex-shrink:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+#globe-intel { flex:1; overflow-y:auto; padding:5px 10px; scrollbar-width:thin; scrollbar-color:rgba(255,60,180,0.2) transparent; }
+.intel-item { display:flex; gap:8px; align-items:flex-start; padding:5px 0; border-bottom:1px solid rgba(255,60,180,0.08); font-size:11px; line-height:1.5; color:rgba(255,200,230,0.85); }
+.intel-item:last-child { border-bottom:none; }
+.intel-tag { font-size:7px; letter-spacing:0.06em; font-weight:bold; min-width:28px; margin-top:2px; flex-shrink:0; }
+#globe-coord-bar { padding:3px 10px; border-top:1px solid rgba(255,60,180,0.08); font-size:7px; color:rgba(255,80,180,0.35); letter-spacing:0.08em; flex-shrink:0; }
+#globe-divider { display:none; }
 
-  /* ─── TERMINAL (bottom center under Cypher) ─── */
-  #terminal {
-    bottom: 10px; left: 50%; transform: translateX(-50%);
-    width: 520px; height: 130px;
-    transition: opacity 0.4s ease;
-    z-index: 12;
-  }
-  #log {
-    height: 90px; overflow-y: auto; padding: 6px 10px;
-    background: transparent;
-    scrollbar-width: thin; scrollbar-color: rgba(255,60,180,0.3) transparent;
-  }
-  .log-line, .log-entry { font-size: 10px; margin-bottom: 4px; line-height: 1.4; color: rgba(255,200,230,0.9); }
-  .log-nine   { color: rgba(0,200,255,0.9); }
-  .log-cypher { color: rgba(255,200,230,0.9); }
-  .log-system { color: rgba(255,80,180,0.6); font-size: 9px; letter-spacing: 0.1em; }
+/* CMD row */
+.cmd-row { display:flex; align-items:center; justify-content:space-between; padding:4px 7px; border:1px solid rgba(255,60,180,0.12); border-radius:2px; cursor:pointer; gap:6px; background:rgba(255,60,180,0.03); transition:background 0.15s; }
+.cmd-row:hover { background:rgba(255,60,180,0.1); border-color:rgba(255,60,180,0.3); }
+.cmd-key { font-size:8px; font-weight:bold; color:rgba(0,200,255,0.8); letter-spacing:0.1em; flex-shrink:0; }
+.cmd-say { font-size:8px; color:rgba(255,200,230,0.5); font-style:italic; text-align:right; }
 
-  /* ─── SPORTS PANEL ─── */
-  #sports-panel {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none; opacity: 0;
-    transition: opacity 0.4s ease;
-    display: grid;
-    grid-template-columns: 300px 1fr 300px;
-    padding: 10px 10px 40px 10px; gap: 10px;
-    z-index: 5;
-  }
-  #sports-panel.active { opacity: 1; }
-  #sports-left, #sports-right {
-    background: rgba(2,4,12,0.92);
-    border: 1px solid rgba(255,60,180,0.25);
-    display: flex; flex-direction: column;
-    overflow: hidden;
-  }
-  #sports-left::before, #sports-right::before {
-    content: ''; position: absolute; width: 10px; height: 10px;
-    border-top: 2px solid rgba(0,200,255,0.8);
-    border-left: 2px solid rgba(0,200,255,0.8);
-    top: -1px; left: -1px;
-  }
-  #sports-left, #sports-right { position: relative; }
-  #sports-center { display: flex; align-items: center; justify-content: center; }
-  #sports-left-content, #sports-right-content {
-    flex: 1; overflow-y: auto; padding: 8px;
-    scrollbar-width: thin; scrollbar-color: rgba(255,60,180,0.2) transparent;
-  }
-  .sports-header {
-    font-size: 8px; letter-spacing: 0.2em; color: rgba(0,200,255,0.7);
-    padding: 6px 10px; border-bottom: 1px solid rgba(255,60,180,0.15);
-  }
-  .sports-section-title {
-    font-size: 8px; letter-spacing: 0.15em;
-    color: rgba(255,80,180,0.6); margin: 8px 0 5px;
-  }
-  .team-card {
-    background: rgba(255,60,180,0.05);
-    border: 1px solid rgba(255,60,180,0.15);
-    border-radius: 4px;
-    padding: 8px;
-    margin-bottom: 6px;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .team-card.live { border-color: rgba(255,50,50,0.5); background: rgba(255,50,50,0.05); }
-  .team-name { font-size: 12px; font-weight: bold; color: rgba(255,200,230,0.95); letter-spacing: 0.04em; }
-  .team-record { font-size: 9px; color: rgba(0,200,255,0.6); letter-spacing: 0.06em; margin-top: 2px; }
-  .team-game-time { font-size: 13px; color: rgba(255,200,230,0.9); font-weight: bold; }
-  .team-game-opponent { font-size: 9px; color: rgba(255,80,180,0.6); margin-top: 2px; }
-  .team-score { font-size: 16px; font-weight: bold; color: rgba(255,50,50,0.9); }
-  .live-dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: rgba(255,50,50,0.9); display: inline-block; margin-right: 4px;
-    animation: pulse-dot 1s ease-in-out infinite;
-  }
-  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.2} }
+/* ─── SPORTS ─── */
+#sports-panel { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; opacity:0; transition:opacity 0.4s ease; z-index:5; }
+#sports-panel.active { opacity:1; }
+.team-widget { position:absolute; background:rgba(2,4,12,0.92); border:1px solid rgba(255,60,180,0.25); overflow:hidden; }
+.team-widget::before{content:'';position:absolute;top:-1px;left:-1px;width:12px;height:12px;border-top:2px solid rgba(0,200,255,0.7);border-left:2px solid rgba(0,200,255,0.7);}
+.team-widget::after{content:'';position:absolute;bottom:-1px;right:-1px;width:12px;height:12px;border-bottom:2px solid rgba(0,200,255,0.7);border-right:2px solid rgba(0,200,255,0.7);}
+.team-widget.live{border-color:rgba(255,50,50,0.6);}
+.team-widget.live::before,.team-widget.live::after{border-color:rgba(255,50,50,0.8);}
+.live-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,50,50,0.9);display:inline-block;margin-right:4px;animation:pulse-dot 1s ease-in-out infinite;}
+@keyframes pulse-dot{0%,100%{opacity:1}50%{opacity:0.2}}
+  @keyframes goal-pulse{0%{opacity:0.7;box-shadow:0 0 14px rgba(255,50,0,0.7),0 0 30px rgba(255,80,0,0.4);}100%{opacity:1;box-shadow:0 0 28px rgba(255,60,0,1),0 0 60px rgba(255,100,0,0.7),0 0 90px rgba(255,50,0,0.3);}}
+#sports-standings-widget{position:absolute;right:10px;top:10px;width:320px;background:rgba(2,4,12,0.92);border:1px solid rgba(255,60,180,0.25);}
+#sports-streak-widget{position:absolute;right:10px;width:320px;background:rgba(2,4,12,0.92);border:1px solid rgba(255,60,180,0.25);}
+.sw-title{font-size:9px;letter-spacing:0.2em;color:rgba(0,200,255,0.7);padding:8px 12px;border-bottom:1px solid rgba(255,60,180,0.15);}
+.sw-body{padding:10px 12px;}
+.standing-row{display:flex;justify-content:space-between;align-items:center;padding:8px 4px;border-bottom:1px solid rgba(255,60,180,0.1);font-size:13px;}
+.standing-row:last-child{border-bottom:none;}
+.standing-name{color:rgba(255,200,230,0.85);}.standing-record{color:rgba(0,200,255,0.8);font-size:11px;}
+.standing-mine{background:rgba(255,60,180,0.12);border-radius:3px;padding:3px 6px;}
 
-  /* ─── CYPHER FRAME ─── */
-  #cypher-frame {
-    position: absolute;
-    left: 50%; transform: translateX(-50%);
-    top: 30px; bottom: 80px;
-    width: 420px;
-    border: 1px solid rgba(255,60,180,0.2);
-    pointer-events: none;
-    background: transparent;
-    z-index: 11;
-  }
-  /* Corner brackets */
-  #cypher-frame::before, #cypher-frame::after,
-  #cypher-frame .corner-bl, #cypher-frame .corner-tr {
-    content: ''; position: absolute;
-    width: 16px; height: 16px;
-    border-color: rgba(0,200,255,0.7);
-    border-style: solid;
-  }
-  #cypher-frame::before { top: -1px; left: -1px; border-width: 2px 0 0 2px; }
-  #cypher-frame::after  { top: -1px; right: -1px; border-width: 2px 2px 0 0; }
-  #cypher-frame .corner-bl { bottom: -1px; left: -1px; border-width: 0 0 2px 2px; }
-  #cypher-frame .corner-tr { bottom: -1px; right: -1px; border-width: 0 2px 2px 0; }
-  /* Top label */
-  #cypher-frame .frame-title {
-    position: absolute; top: -1px; left: 50%; transform: translateX(-50%);
-    background: rgba(2,4,12,0.95);
-    border: 1px solid rgba(255,60,180,0.2);
-    border-top: none;
-    padding: 3px 16px;
-    font-size: 8px; letter-spacing: 0.2em;
-    color: rgba(0,200,255,0.7);
-    white-space: nowrap;
-  }
-  /* Bottom label */
-  #cypher-frame .frame-bottom {
-    position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
-    background: rgba(2,4,12,0.95);
-    border: 1px solid rgba(255,60,180,0.2);
-    border-bottom: none;
-    padding: 3px 16px;
-    font-size: 8px; letter-spacing: 0.2em;
-    color: rgba(255,80,180,0.6);
-    white-space: nowrap;
-  }
-  /* Side accent lines */
-  #cypher-frame .side-left, #cypher-frame .side-right {
-    position: absolute; top: 50%; transform: translateY(-50%);
-    width: 1px; height: 40%;
-    background: linear-gradient(to bottom, transparent, rgba(0,200,255,0.3), transparent);
-  }
-  #cypher-frame .side-left { left: -1px; }
-  #cypher-frame .side-right { right: -1px; }
-
-  /* ─── SPORTS MODE LAYOUT ─── */
-  #sports-panel {
-    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-    pointer-events: none; opacity: 0;
-    transition: opacity 0.4s ease;
-    z-index: 5;
-    box-sizing: border-box;
-  }
-  #sports-panel.active { opacity: 1; }
-
-  /* Individual team widgets — left side, stacked */
-  .team-widget {
-    position: absolute;
-    background: rgba(2,4,12,0.92);
-    border: 1px solid rgba(255,60,180,0.25);
-    overflow: hidden;
-  }
-  .team-widget::before {
-    content: ''; position: absolute;
-    top: -1px; left: -1px;
-    width: 12px; height: 12px;
-    border-top: 2px solid rgba(0,200,255,0.7);
-    border-left: 2px solid rgba(0,200,255,0.7);
-  }
-  .team-widget::after {
-    content: ''; position: absolute;
-    bottom: -1px; right: -1px;
-    width: 12px; height: 12px;
-    border-bottom: 2px solid rgba(0,200,255,0.7);
-    border-right: 2px solid rgba(0,200,255,0.7);
-  }
-  .team-widget.live { border-color: rgba(255,50,50,0.6); }
-  .team-widget.live::before, .team-widget.live::after {
-    border-color: rgba(255,50,50,0.8);
-  }
-  .tw-header {
-    display: flex; align-items: center; gap: 8px;
-    padding: 8px 12px;
-    border-bottom: 1px solid rgba(255,60,180,0.12);
-    background: rgba(255,60,180,0.04);
-  }
-  .tw-name { font-size: 12px; font-weight: bold; color: rgba(255,200,230,0.95); letter-spacing: 0.03em; }
-  .tw-record { font-size: 9px; color: rgba(0,200,255,0.7); margin-top: 1px; letter-spacing: 0.06em; }
-  .tw-body { padding: 8px 12px; }
-  .tw-score-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
-  .tw-score { font-size: 26px; font-weight: bold; color: rgba(255,50,50,0.9); line-height: 1; }
-  .tw-dash { font-size: 16px; color: rgba(255,200,230,0.25); margin: 0 2px; }
-  .tw-time { font-size: 18px; font-weight: bold; color: rgba(255,200,230,0.9); }
-  .tw-opp { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
-  .tw-opp-name { font-size: 10px; color: rgba(255,80,180,0.7); }
-  .tw-detail { font-size: 8px; color: rgba(255,80,180,0.45); letter-spacing: 0.08em; margin-top: 2px; }
-  .tw-off { font-size: 9px; color: rgba(255,200,230,0.2); letter-spacing: 0.12em; padding: 4px 0; }
-  .tw-streak { display: flex; gap: 3px; margin-top: 5px; }
-  .tw-dot {
-    width: 11px; height: 11px; border-radius: 2px;
-    font-size: 7px; font-weight: bold;
-    display: flex; align-items: center; justify-content: center;
-    color: rgba(0,0,0,0.9);
-  }
-  .tw-dot-w { background: rgba(50,255,100,0.85); }
-  .tw-dot-l { background: rgba(255,50,50,0.75); }
-
-  /* Right widgets */
-  #sports-standings-widget {
-    position: absolute;
-    right: 10px; top: 10px;
-    width: 320px;
-    background: rgba(2,4,12,0.92);
-    border: 1px solid rgba(255,60,180,0.25);
-  }
-  #sports-streak-widget {
-    position: absolute;
-    right: 10px;
-    width: 320px;
-    background: rgba(2,4,12,0.92);
-    border: 1px solid rgba(255,60,180,0.25);
-  }
-  .sw-title {
-    font-size: 9px; letter-spacing: 0.2em; color: rgba(0,200,255,0.7);
-    padding: 8px 12px; border-bottom: 1px solid rgba(255,60,180,0.15);
-  }
-  .sw-body { padding: 10px 12px; }
-  .standing-row {
-    display: flex; justify-content: space-between; align-items: center;
-    padding: 8px 4px; border-bottom: 1px solid rgba(255,60,180,0.1);
-    font-size: 13px;
-  }
-  .standing-row:last-child { border-bottom: none; }
-  .standing-name { color: rgba(255,200,230,0.85); }
-  .standing-record { color: rgba(0,200,255,0.8); font-size: 11px; }
-  .standing-mine { background: rgba(255,60,180,0.12); border-radius: 3px; padding: 3px 6px; }
-  .streak-row { display: flex; align-items: center; gap: 6px; margin-bottom: 7px; }
-  .streak-row:last-child { margin-bottom: 0; }
-  .streak-team { font-size: 10px; color: rgba(255,200,230,0.8); flex: 1; }
-  .streak-dots { display: flex; gap: 3px; }
-  .streak-dot {
-    width: 12px; height: 12px; border-radius: 2px;
-    font-size: 7px; display: flex; align-items: center; justify-content: center;
-    font-weight: bold; color: rgba(0,0,0,0.9);
-  }
-  .streak-w { background: rgba(50,255,100,0.85); }
-  .streak-l { background: rgba(255,50,50,0.75); }
-
-  /* Live dot */
-  .live-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: rgba(255,50,50,0.9); display: inline-block; margin-right: 4px;
-    animation: pulse-dot 1s ease-in-out infinite;
-  }
-  @keyframes pulse-dot { 0%,100%{opacity:1} 50%{opacity:0.2} }
-
-  /* ─── BIG TICKER ─── */
-  #scores-ticker {
-    position: fixed; bottom: 0; left: 0; width: 100%;
-    height: 90px; z-index: 20;
-    background: rgba(2,4,12,0.97);
-    border-top: 2px solid rgba(255,60,180,0.4);
-    display: none; flex-direction: column;
-  }
-  #scores-ticker.active { display: flex; }
-  #ticker-header {
-    font-size: 8px; letter-spacing: 0.2em; color: rgba(0,200,255,0.7);
-    padding: 4px 16px 2px;
-    border-bottom: 1px solid rgba(255,60,180,0.15);
-  }
-  #ticker-track { flex: 1; overflow: hidden; position: relative; }
-  #ticker-content {
-    position: absolute; white-space: nowrap;
-    display: flex; align-items: center; height: 100%;
-    animation: ticker-scroll 40s linear infinite;
-    padding: 0 20px; gap: 0;
-  }
-  @keyframes ticker-scroll {
-    0%   { transform: translateX(100vw); }
-    100% { transform: translateX(-100%); }
-  }
-  .ticker-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 0 30px;
-    border-right: 1px solid rgba(255,60,180,0.2);
-    height: 100%;
-  }
-  .ticker-logo { width: 44px; height: 44px; object-fit: contain; opacity: 0.9; flex-shrink: 0; }
-  .ticker-info { display: flex; flex-direction: column; gap: 2px; }
-  .ticker-name { font-size: 13px; font-weight: bold; color: rgba(255,200,230,0.95); letter-spacing: 0.04em; }
-  .ticker-record { font-size: 10px; color: rgba(0,200,255,0.7); letter-spacing: 0.06em; }
-  .ticker-game { font-size: 11px; color: rgba(255,80,180,0.8); letter-spacing: 0.05em; }
-  .ticker-score { font-size: 22px; font-weight: bold; color: rgba(255,50,50,0.9); margin: 0 8px; }
-  .ticker-live-badge {
-    font-size: 8px; letter-spacing: 0.15em;
-    color: rgba(255,50,50,0.9);
-    border: 1px solid rgba(255,50,50,0.5);
-    padding: 2px 6px; border-radius: 2px;
-    animation: pulse-dot 1s ease-in-out infinite;
-  }
-  .ticker-vs { font-size: 18px; font-weight: bold; color: rgba(255,200,230,0.95); margin: 0 8px; }
-  .ticker-opp-logo { width: 44px; height: 44px; object-fit: contain; opacity: 0.7; flex-shrink: 0; }
-  .ticker-time { font-size: 16px; font-weight: bold; color: rgba(255,200,230,0.85); }
-  .ticker-divider {
-    width: 2px; height: 60px; margin: 0 20px;
-    background: linear-gradient(to bottom, transparent, rgba(255,60,180,0.5), transparent);
-    flex-shrink: 0;
-  }
-  .ticker-news-badge {
-    font-size: 7px; letter-spacing: 0.15em; padding: 2px 6px;
-    border-radius: 2px; margin-right: 8px; flex-shrink: 0;
-    font-weight: bold;
-  }
-  .ticker-news-badge.score  { background: rgba(255,50,50,0.3);  color: rgba(255,50,50,0.9);  border: 1px solid rgba(255,50,50,0.4); }
-  .ticker-news-badge.news   { background: rgba(0,200,255,0.15); color: rgba(0,200,255,0.9);  border: 1px solid rgba(0,200,255,0.3); }
-  .ticker-news-badge.sched  { background: rgba(255,80,180,0.15);color: rgba(255,80,180,0.9); border: 1px solid rgba(255,80,180,0.3); }
-  .ticker-news-text { font-size: 11px; color: rgba(255,200,230,0.85); max-width: 400px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .ticker-segment { display: flex; align-items: center; height: 100%; padding: 0 16px; gap: 8px; }
-
-  /* ─── GLITCH STATES ─── */
-  body.state-speaking  #status-dot { background: rgba(255,80,180,0.9); box-shadow: 0 0 10px rgba(255,80,180,0.8); }
-  body.state-listening #status-dot { background: rgba(0,200,255,0.9); box-shadow: 0 0 10px rgba(0,200,255,0.8); }
-  body.state-thinking  #status-dot { background: rgba(180,0,255,0.9); box-shadow: 0 0 10px rgba(180,0,255,0.8); }
-  body.state-muted     #status-dot { background: rgba(80,80,80,0.9); box-shadow: none; }
+/* ─── TICKER ─── */
+#scores-ticker{position:fixed;bottom:0;left:0;width:100%;height:90px;z-index:20;background:rgba(2,4,12,0.97);border-top:2px solid rgba(255,60,180,0.4);display:none;flex-direction:column;}
+#scores-ticker.active{display:flex;}
+#ticker-header{font-size:8px;letter-spacing:0.2em;color:rgba(0,200,255,0.7);padding:4px 16px 2px;border-bottom:1px solid rgba(255,60,180,0.15);}
+#ticker-track{flex:1;overflow:hidden;position:relative;}
+#ticker-content{display:flex;align-items:center;height:100%;white-space:nowrap;}
+.ticker-inner{display:flex;align-items:center;animation:ticker-scroll 60s linear infinite;flex-shrink:0;}
+@keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.ticker-item{display:flex;align-items:center;gap:14px;padding:0 36px;border-right:1px solid rgba(255,60,180,0.2);height:100%;flex-shrink:0;}
+.ticker-score{font-size:26px;font-weight:bold;color:rgba(255,50,50,0.9);margin:0 8px;}
+.ticker-live-badge{font-size:9px;letter-spacing:0.15em;color:rgba(255,50,50,0.9);border:1px solid rgba(255,50,50,0.5);padding:3px 8px;border-radius:2px;animation:pulse-dot 1s ease-in-out infinite;}
+.ticker-divider{width:2px;height:65px;margin:0 20px;background:linear-gradient(to bottom,transparent,rgba(255,60,180,0.5),transparent);flex-shrink:0;}
+.ticker-news-badge{font-size:8px;letter-spacing:0.15em;padding:3px 8px;border-radius:2px;margin-right:10px;flex-shrink:0;font-weight:bold;}
+.ticker-news-badge.news{background:rgba(0,200,255,0.15);color:rgba(0,200,255,0.9);border:1px solid rgba(0,200,255,0.3);}
+.ticker-news-text{font-size:13px;color:rgba(255,200,230,0.9);white-space:nowrap;}
 </style>
 </head>
 <body>
@@ -424,86 +139,344 @@
 </div>
 
 <div id="hud">
+<div id="stats-panel" style="display:none;"></div>
+<div id="terminal" style="display:none;"><span id="term-dot"></span><span id="term-status"></span></div>
 
-  <!-- TOP LEFT — LOCATION -->
-  <div class="panel" id="location-panel">
-    <div class="panel-title">// LOCATION FEED</div>
-    <div class="panel-body" style="padding:0;">
-      <div class="loc-block">
-        <div class="loc-name">MARIETTA, PA — EASTERN</div>
-        <div class="loc-time" id="clock-est">--:--:--</div>
-        <div class="loc-row">
-          <span class="loc-temp" id="weather-home">--</span>
-          <span class="loc-desc" id="weather-home-desc">LOADING...</span>
-        </div>
-        <div class="loc-date" id="date-est">--/--/----</div>
-      </div>
-      <div class="loc-block">
-        <div class="loc-name">CHIANG MAI, TH — ICT</div>
-        <div class="loc-time" id="clock-th">--:--:--</div>
-        <div class="loc-row">
-          <span class="loc-temp" id="weather-thai">--</span>
-          <span class="loc-desc" id="weather-thai-desc">LOADING...</span>
-        </div>
-        <div class="loc-date" id="date-th">--/--/----</div>
-      </div>
-    </div>
+<!-- CYPHER FRAME -->
+<div id="cypher-frame">
+  <div class="corner-bl"></div><div class="corner-tr"></div>
+  <div class="frame-title">CYPHER // BLACKWALL CONSTRUCT</div>
+  <div class="side-left"></div><div class="side-right"></div>
+  <div id="cypher-terminal"><div id="log"></div></div>
+  <div id="cypher-speech-indicator">
+    <canvas id="cypher-waveform-canvas"></canvas>
+    <div id="cypher-status"><div id="status-dot"></div><div id="status-label">STANDING BY</div></div>
   </div>
-
-  <!-- BOTTOM LEFT — SYSTEM STATS -->
-  <div class="panel" id="stats-panel">
-    <div class="panel-title">// SYS — NINE'S RIG</div>
-    <div class="panel-body">
-      <div class="stat-row">
-        <span class="stat-label">CPU</span>
-        <div class="stat-bar-wrap"><div class="stat-bar" id="cpu-bar" style="width:0%"></div></div>
-        <span class="stat-value" id="cpu-val">--%</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label">RAM</span>
-        <div class="stat-bar-wrap"><div class="stat-bar" id="ram-bar" style="width:0%"></div></div>
-        <span class="stat-value" id="ram-val">--%</span>
-      </div>
-      <div class="stat-row">
-        <span class="stat-label">GPU</span>
-        <div class="stat-bar-wrap"><div class="stat-bar" id="gpu-bar" style="width:0%"></div></div>
-        <span class="stat-value" id="gpu-val">--%</span>
-      </div>
-    </div>
-  </div>
-
-  <!-- TOP RIGHT — TERMINAL -->
-  <div class="panel" id="terminal">
-    <div class="panel-title" id="terminal-header">
-      <span id="term-dot">◈</span> <span id="term-status">NET TERMINAL</span>
-    </div>
-    <div id="log"></div>
-  </div>
-
-  <!-- CYPHER FRAME -->
-  <div id="cypher-frame">
-    <div class="corner-bl"></div>
-    <div class="corner-tr"></div>
-    <div class="frame-title">CYPHER // BLACKWALL CONSTRUCT</div>
-    <div class="frame-bottom" id="cypher-status-label">STANDING BY</div>
-    <div class="side-left"></div>
-    <div class="side-right"></div>
-  </div>
-
-  <!-- BOTTOM CENTER — WAVEFORM + STATUS -->
-  <div id="bottom-center">
-    <div id="waveform-container">
-      <canvas id="waveform-canvas"></canvas>
-    </div>
-    <div id="status-indicator">
-      <div id="status-dot"></div>
-      <div id="status-label">STANDING BY</div>
-    </div>
-  </div>
-
 </div>
 
-<!-- BIG TICKER -->
+<!-- ══════════════════════════════════════ LEFT PANEL ══ -->
+<div id="home-left-panel">
+
+  <!-- ROW 1: SYS MONITOR — 4 donuts -->
+  <div class="hw" style="flex-shrink:0;">
+    <div class="hw-title">
+      <span>// SYS MONITOR</span>
+      <div style="display:flex;gap:10px;align-items:center;">
+        <span id="lp-uptime" style="font-size:8px;color:rgba(255,200,230,0.3);">--h --m</span>
+        <span id="lp-spike-alert" style="display:none;color:rgba(255,50,50,0.9);font-size:8px;"></span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);">
+      <div class="donut-cell">
+        <canvas id="lp-donut-cpu" width="80" height="80"></canvas>
+        <div class="donut-val" id="lp-donut-cpu-val">--%</div>
+        <div class="donut-label">CPU</div>
+        <div class="donut-sub" id="lp-cpu-sub">—</div>
+      </div>
+      <div class="donut-cell">
+        <canvas id="lp-donut-ram" width="80" height="80"></canvas>
+        <div class="donut-val" id="lp-donut-ram-val">--%</div>
+        <div class="donut-label">RAM</div>
+        <div class="donut-sub" id="lp-ram-sub">-- / -- GB</div>
+      </div>
+      <div class="donut-cell">
+        <canvas id="lp-donut-gpu" width="80" height="80"></canvas>
+        <div class="donut-val" id="lp-donut-gpu-val">--%</div>
+        <div class="donut-label">GPU</div>
+        <div class="donut-sub" id="lp-gpu-sub">—</div>
+      </div>
+      <div class="donut-cell">
+        <canvas id="lp-donut-disk" width="80" height="80"></canvas>
+        <div class="donut-label">DISK I/O</div>
+        <div class="donut-sub" id="lp-disk-read" style="color:rgba(0,200,255,0.6);">R -- MB/s</div>
+        <div class="donut-sub" id="lp-disk-write" style="color:rgba(255,80,180,0.6);">W -- MB/s</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 2: THERMAL — 4 donut rings -->
+  <div class="hw" style="flex-shrink:0;">
+    <div class="hw-title">
+      <span>// THERMAL</span>
+      <div style="display:flex;gap:10px;">
+        <span style="font-size:7px;color:rgba(50,220,120,0.6);">● &lt;65 COOL</span>
+        <span style="font-size:7px;color:rgba(255,160,40,0.6);">● 65-79 WARM</span>
+        <span style="font-size:7px;color:rgba(255,50,50,0.6);">● 80+ HOT</span>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);">
+      <div class="donut-cell">
+        <canvas id="lp-temp-cpu" width="72" height="72"></canvas>
+        <div style="font-size:12px;font-weight:bold;line-height:1;margin-top:3px;" id="lp-temp-cpu-val">--°C</div>
+        <div class="donut-label">CPU TEMP</div>
+        <div style="font-size:7px;letter-spacing:0.1em;margin-top:1px;" id="lp-temp-cpu-status">—</div>
+      </div>
+      <div class="donut-cell">
+        <canvas id="lp-temp-gpu" width="72" height="72"></canvas>
+        <div style="font-size:12px;font-weight:bold;line-height:1;margin-top:3px;" id="lp-temp-gpu-val">--°C</div>
+        <div class="donut-label">GPU TEMP</div>
+        <div style="font-size:7px;letter-spacing:0.1em;margin-top:1px;" id="lp-temp-gpu-status">—</div>
+      </div>
+      <div class="donut-cell">
+        <canvas id="lp-temp-fan" width="72" height="72"></canvas>
+        <div style="font-size:12px;font-weight:bold;line-height:1;margin-top:3px;" id="lp-temp-fan-val">--%</div>
+        <div class="donut-label">GPU FAN</div>
+        <div style="font-size:7px;letter-spacing:0.1em;margin-top:1px;" id="lp-temp-fan-status">—</div>
+      </div>
+      <div class="donut-cell">
+        <canvas id="lp-temp-vram" width="72" height="72"></canvas>
+        <div style="font-size:12px;font-weight:bold;line-height:1;margin-top:3px;" id="lp-temp-vram-val">-- GB</div>
+        <div class="donut-label">VRAM</div>
+        <div style="font-size:7px;letter-spacing:0.1em;margin-top:1px;" id="lp-temp-vram-status">USAGE</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 3: NETWORK + STORAGE -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;flex-shrink:0;">
+    <div class="hw">
+      <div class="hw-title">// NETWORK</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid rgba(255,60,180,0.1);">
+        <div style="padding:7px 10px;border-right:1px solid rgba(255,60,180,0.1);">
+          <div style="font-size:7px;color:rgba(255,80,180,0.5);letter-spacing:0.12em;margin-bottom:2px;">UPLOAD</div>
+          <div style="display:flex;align-items:baseline;gap:2px;">
+            <span style="font-size:20px;font-weight:bold;color:rgba(255,200,230,0.95);line-height:1;" id="lp-net-up">0.0</span>
+            <span style="font-size:8px;color:rgba(255,200,230,0.3);">MB/s</span>
+          </div>
+        </div>
+        <div style="padding:7px 10px;">
+          <div style="font-size:7px;color:rgba(0,200,255,0.5);letter-spacing:0.12em;margin-bottom:2px;">DOWNLOAD</div>
+          <div style="display:flex;align-items:baseline;gap:2px;">
+            <span style="font-size:20px;font-weight:bold;color:rgba(255,200,230,0.95);line-height:1;" id="lp-net-dn">0.0</span>
+            <span style="font-size:8px;color:rgba(255,200,230,0.3);">MB/s</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 10px;border-bottom:1px solid rgba(255,60,180,0.08);">
+        <span style="font-size:9px;color:rgba(255,200,230,0.4);">PING <span id="lp-net-ping" style="color:rgba(50,255,100,0.8);">—</span></span>
+        <span style="font-size:9px;font-weight:bold;" id="lp-net-status">● CHECKING</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;padding:3px 10px;">
+        <span style="font-size:8px;color:rgba(255,200,230,0.25);" id="lp-net-sup">↑ 0 MB</span>
+        <span style="font-size:8px;color:rgba(255,200,230,0.25);" id="lp-net-sdn">↓ 0 MB</span>
+      </div>
+    </div>
+    <div class="hw">
+      <div class="hw-title">// STORAGE</div>
+      <div style="padding:7px 10px;" id="lp-storage-list">
+        <div style="font-size:10px;color:rgba(255,200,230,0.2);">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 4: PROCESSES -->
+  <div class="hw" style="flex:1;min-height:0;display:flex;flex-direction:column;">
+    <div class="hw-title"><span>// PROCESSES</span><span style="font-size:8px;color:rgba(255,200,230,0.25);">TOP 6 BY CPU</span></div>
+    <div style="padding:3px 10px;flex:1;overflow-y:auto;" id="lp-processes">
+      <div style="font-size:10px;color:rgba(255,200,230,0.2);">Loading...</div>
+    </div>
+  </div>
+
+  <!-- ROW 5: SESSION LOG + GOALS -->
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;flex:1;min-height:0;">
+    <div class="hw" style="display:flex;flex-direction:column;min-height:0;">
+      <div class="hw-title">// SESSION LOG</div>
+      <div style="padding:5px 10px;flex:1;overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,60,180,0.2) transparent;" id="lp-session-log">
+        <div style="font-size:10px;color:rgba(255,200,230,0.2);">No activity yet.</div>
+      </div>
+    </div>
+    <div class="hw" style="display:flex;flex-direction:column;min-height:0;">
+      <div class="hw-title">
+        <span>// DAILY GOALS</span>
+        <span id="lp-goals-count" style="color:rgba(50,255,100,0.7);font-size:8px;">0/0</span>
+      </div>
+      <div style="padding:5px 10px;flex:1;overflow-y:auto;" id="lp-goals-list">
+        <div style="font-size:10px;color:rgba(255,200,230,0.2);">Loading...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ROW 6: COUNTDOWN + PERIPHERALS + FPS -->
+  <div style="display:grid;grid-template-columns:1fr 190px 110px;gap:5px;flex-shrink:0;">
+
+    <!-- COUNTDOWN -->
+    <div class="hw">
+      <div class="hw-title">// COUNTDOWNS</div>
+      <div style="display:flex;align-items:stretch;min-height:52px;" id="lp-countdown-list">
+        <div style="font-size:9px;color:rgba(255,200,230,0.2);padding:6px 10px;align-self:center;">Say "count down to ..."</div>
+      </div>
+    </div>
+
+    <!-- PERIPHERALS -->
+    <div class="hw">
+      <div class="hw-title">// PERIPHERALS</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;padding:5px 6px;gap:2px;">
+        <div style="display:flex;flex-direction:column;align-items:center;padding:3px;border-right:1px solid rgba(255,60,180,0.1);">
+          <canvas id="lp-peri-ring-void_elite" width="48" height="48"></canvas>
+          <div style="font-size:9px;font-weight:bold;color:rgba(255,200,230,0.9);margin-top:2px;" id="lp-peri-val-void_elite">--%</div>
+          <div style="font-size:6px;color:rgba(255,80,180,0.5);letter-spacing:0.1em;">VOID ELITE</div>
+          <div style="font-size:7px;margin-top:1px;" id="lp-peri-status-void_elite">—</div>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;padding:3px;">
+          <canvas id="lp-peri-ring-m65_mouse" width="48" height="48"></canvas>
+          <div style="font-size:9px;font-weight:bold;color:rgba(255,200,230,0.9);margin-top:2px;" id="lp-peri-val-m65_mouse">--%</div>
+          <div style="font-size:6px;color:rgba(255,80,180,0.5);letter-spacing:0.1em;">M65 RGB</div>
+          <div style="font-size:7px;margin-top:1px;" id="lp-peri-status-m65_mouse">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FPS -->
+    <div class="hw">
+      <div class="hw-title">// FPS</div>
+      <div style="padding:5px 8px;display:flex;flex-direction:column;align-items:center;justify-content:center;">
+        <div style="font-size:36px;font-weight:bold;line-height:1;font-family:'Courier New',monospace;" id="lp-fps-val">--</div>
+        <div style="font-size:6px;letter-spacing:0.12em;color:rgba(255,200,230,0.3);margin-top:2px;">FPS</div>
+        <div style="width:100%;height:3px;background:rgba(255,60,180,0.1);border-radius:2px;margin-top:5px;overflow:hidden;">
+          <div id="lp-fps-bar" style="height:100%;width:0%;background:rgba(255,80,180,0.7);border-radius:2px;transition:width 0.5s ease;"></div>
+        </div>
+        <div style="font-size:7px;color:rgba(255,200,230,0.2);margin-top:2px;text-align:center;line-height:1.3;" id="lp-fps-app">NO GAME</div>
+      </div>
+    </div>
+
+  </div>
+
+</div><!-- end left panel -->
+
+<!-- ══════════════════════════════════════ RIGHT PANEL ══ -->
+<div id="home-right-panel">
+
+  <!-- GLOBE -->
+  <div class="hw" id="globe-widget">
+    <div class="hw-title">
+      <span>// GLOBAL — NET TERMINAL</span>
+      <span id="globe-live-tag" style="color:rgba(255,80,180,0.4);font-size:8px;">LOADING</span>
+    </div>
+    <div id="globe-main-row">
+      <div id="globe-left">
+        <canvas id="globeHomeCanvas"></canvas>
+        <div id="globe-coord" style="font-size:7px;color:rgba(255,80,180,0.35);letter-spacing:0.08em;margin-top:3px;">LAT — LON</div>
+      </div>
+      <div id="globe-divider"></div>
+      <div id="globe-right">
+        <div id="globe-country-label">SELECT A COUNTRY</div>
+        <div id="globe-intel"><div style="font-size:10px;color:rgba(255,200,230,0.2);padding:4px 0;">Click the globe to pull intel...</div></div>
+      </div>
+    </div>
+    <div id="globe-coord-bar">DRAG TO ROTATE — CLICK COUNTRY TO PULL INTEL</div>
+  </div>
+
+  <!-- CALENDAR -->
+  <div class="hw" id="home-calendar-widget" style="height:255px;display:flex;flex-direction:column;flex-shrink:0;">
+    <div class="hw-title">
+      <span>// CALENDAR</span>
+      <span id="cal-date" style="color:rgba(255,80,180,0.5);font-size:8px;"></span>
+    </div>
+    <div style="display:flex;flex:1;min-height:0;">
+      <div style="flex:1;display:flex;flex-direction:column;padding:7px 10px;border-right:1px solid rgba(255,60,180,0.15);overflow-y:auto;scrollbar-width:thin;scrollbar-color:rgba(255,60,180,0.2) transparent;">
+        <div style="font-size:8px;color:rgba(255,80,180,0.5);letter-spacing:0.15em;margin-bottom:5px;flex-shrink:0;" id="cal-day-label">TODAY</div>
+        <div id="cal-body"><div style="font-size:10px;color:rgba(255,200,230,0.25);padding:4px 0;">No events today.</div></div>
+      </div>
+      <div style="width:50%;padding:7px 9px;display:flex;flex-direction:column;box-sizing:border-box;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;flex-shrink:0;">
+          <button id="cal-prev" style="background:none;border:none;color:rgba(0,200,255,0.6);cursor:pointer;font-family:'Courier New',monospace;font-size:12px;padding:0 3px;">◀</button>
+          <span id="cal-month-label" style="font-size:8px;color:rgba(0,200,255,0.7);letter-spacing:0.15em;"></span>
+          <button id="cal-next" style="background:none;border:none;color:rgba(0,200,255,0.6);cursor:pointer;font-family:'Courier New',monospace;font-size:12px;padding:0 3px;">▶</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:1px;margin-bottom:3px;flex-shrink:0;">
+          <div style="text-align:center;font-size:7px;color:rgba(255,80,180,0.4);">S</div><div style="text-align:center;font-size:7px;color:rgba(255,80,180,0.4);">M</div>
+          <div style="text-align:center;font-size:7px;color:rgba(255,80,180,0.4);">T</div><div style="text-align:center;font-size:7px;color:rgba(255,80,180,0.4);">W</div>
+          <div style="text-align:center;font-size:7px;color:rgba(255,80,180,0.4);">T</div><div style="text-align:center;font-size:7px;color:rgba(255,80,180,0.4);">F</div>
+          <div style="text-align:center;font-size:7px;color:rgba(255,80,180,0.4);">S</div>
+        </div>
+        <div id="cal-grid" style="display:grid;grid-template-columns:repeat(7,1fr);gap:2px;flex:1;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOCATION FEED -->
+  <div class="hw" style="flex-shrink:0;">
+    <div class="hw-title" style="padding:5px 10px;">// LOCATION FEED</div>
+    <div style="display:flex;">
+      <div style="flex:1;padding:8px 12px;border-right:1px solid rgba(255,60,180,0.15);display:flex;align-items:center;gap:10px;">
+        <canvas id="weather-icon-home" width="48" height="48" style="flex-shrink:0;"></canvas>
+        <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
+          <div style="font-size:7px;color:rgba(0,200,255,0.6);letter-spacing:0.18em;margin-bottom:3px;">MARIETTA, PA — EASTERN</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="font-size:24px;font-weight:bold;color:rgba(255,200,230,0.95);line-height:1;flex-shrink:0;" id="clock-est">--:--:--</div>
+            <div style="display:flex;flex-direction:column;gap:1px;">
+              <span style="font-size:14px;color:rgba(255,200,230,0.95);font-weight:bold;line-height:1;" id="weather-home">--</span>
+              <span style="font-size:8px;color:rgba(255,80,180,0.7);letter-spacing:0.08em;" id="weather-home-desc">--</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:4px;">
+            <div style="display:flex;align-items:center;gap:3px;"><span style="font-size:8px;color:rgba(255,180,50,0.7);">▲</span><span style="font-size:8px;color:rgba(255,200,230,0.5);" id="sunrise-home">--:--</span></div>
+            <div style="display:flex;align-items:center;gap:3px;"><span style="font-size:8px;color:rgba(255,80,180,0.6);">▼</span><span style="font-size:8px;color:rgba(255,200,230,0.5);" id="sunset-home">--:--</span></div>
+          </div>
+        </div>
+      </div>
+      <div style="flex:1;padding:8px 12px;display:flex;align-items:center;gap:10px;">
+        <canvas id="weather-icon-thai" width="48" height="48" style="flex-shrink:0;"></canvas>
+        <div style="display:flex;flex-direction:column;flex:1;min-width:0;">
+          <div style="font-size:7px;color:rgba(0,200,255,0.6);letter-spacing:0.18em;margin-bottom:3px;">CHIANG MAI, TH — ICT</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="font-size:24px;font-weight:bold;color:rgba(255,200,230,0.95);line-height:1;flex-shrink:0;" id="clock-th">--:--:--</div>
+            <div style="display:flex;flex-direction:column;gap:1px;">
+              <span style="font-size:14px;color:rgba(255,200,230,0.95);font-weight:bold;line-height:1;" id="weather-thai">--</span>
+              <span style="font-size:8px;color:rgba(255,80,180,0.7);letter-spacing:0.08em;" id="weather-thai-desc">--</span>
+              <span style="font-size:9px;color:rgba(0,200,255,0.8);letter-spacing:0.1em;font-weight:bold;" id="date-th">--/--/----</span>
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;margin-top:4px;">
+            <div style="display:flex;align-items:center;gap:3px;"><span style="font-size:8px;color:rgba(255,180,50,0.7);">▲</span><span style="font-size:8px;color:rgba(255,200,230,0.5);" id="sunrise-thai">--:--</span></div>
+            <div style="display:flex;align-items:center;gap:3px;"><span style="font-size:8px;color:rgba(255,80,180,0.6);">▼</span><span style="font-size:8px;color:rgba(255,200,230,0.5);" id="sunset-thai">--:--</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TIMER + COMMAND REF -->
+  <div style="display:flex;gap:5px;flex:1;min-height:0;">
+    <div class="hw" style="flex:1;display:flex;flex-direction:column;">
+      <div class="hw-title"><span>// TIMER</span><span id="timer-status" style="color:rgba(255,80,180,0.5);font-size:8px;">STANDBY</span></div>
+      <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:8px;">
+        <div style="font-size:40px;font-weight:bold;color:rgba(255,200,230,0.95);letter-spacing:0.05em;line-height:1;font-family:'Courier New',monospace;" id="timer-display">00:00</div>
+        <div style="font-size:7px;color:rgba(255,80,180,0.4);letter-spacing:0.2em;margin-top:5px;" id="timer-label">SET A TIMER VIA VOICE</div>
+        <div style="width:100%;height:2px;background:rgba(255,60,180,0.1);border-radius:1px;margin-top:8px;overflow:hidden;">
+          <div id="timer-bar" style="height:100%;width:0%;background:rgba(255,80,180,0.8);border-radius:1px;transition:width 1s linear;"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:7px;">
+          <button onclick="timerPause()" style="background:none;border:1px solid rgba(255,60,180,0.3);color:rgba(255,200,230,0.7);cursor:pointer;font-family:'Courier New',monospace;font-size:8px;letter-spacing:0.1em;padding:3px 8px;">PAUSE</button>
+          <button onclick="timerReset()" style="background:none;border:1px solid rgba(255,60,180,0.3);color:rgba(255,200,230,0.7);cursor:pointer;font-family:'Courier New',monospace;font-size:8px;letter-spacing:0.1em;padding:3px 8px;">RESET</button>
+        </div>
+      </div>
+    </div>
+    <div class="hw" style="flex:1;display:flex;flex-direction:column;">
+      <div class="hw-title">// COMMAND REF</div>
+      <div style="flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:3px;scrollbar-width:thin;scrollbar-color:rgba(255,60,180,0.2) transparent;">
+        <div style="font-size:7px;color:rgba(255,80,180,0.5);letter-spacing:0.2em;margin-bottom:1px;">MODES</div>
+        <div class="cmd-row" onclick="sendVoiceCmd('take me to sports mode')"><span class="cmd-key">SPORTS</span><span class="cmd-say">"Take me to sports mode"</span></div>
+        <div class="cmd-row" onclick="sendVoiceCmd('go home')"><span class="cmd-key">HOME</span><span class="cmd-say">"Go home"</span></div>
+        <div style="font-size:7px;color:rgba(255,80,180,0.5);letter-spacing:0.2em;margin-top:4px;margin-bottom:1px;">GOALS & COUNTDOWN</div>
+        <div class="cmd-row"><span class="cmd-key">ADD GOAL</span><span class="cmd-say">"Add a goal: ..."</span></div>
+        <div class="cmd-row"><span class="cmd-key">COUNTDOWN</span><span class="cmd-say">"Count down to X on date"</span></div>
+        <div style="font-size:7px;color:rgba(255,80,180,0.5);letter-spacing:0.2em;margin-top:4px;margin-bottom:1px;">TIMER</div>
+        <div class="cmd-row"><span class="cmd-key">SET TIMER</span><span class="cmd-say">"Set a timer for 30 min"</span></div>
+        <div class="cmd-row"><span class="cmd-key">CANCEL</span><span class="cmd-say">"Cancel the timer"</span></div>
+        <div style="font-size:7px;color:rgba(255,80,180,0.5);letter-spacing:0.2em;margin-top:4px;margin-bottom:1px;">CALENDAR</div>
+        <div class="cmd-row"><span class="cmd-key">ADD EVENT</span><span class="cmd-say">"Add meeting Friday 9am"</span></div>
+        <div class="cmd-row"><span class="cmd-key">TODAY</span><span class="cmd-say">"What's on my calendar?"</span></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end right panel -->
+
+<div id="bottom-center"></div>
+</div><!-- end hud -->
+
+<!-- TICKER -->
 <div id="scores-ticker">
   <div id="ticker-header">// SPORTS TERMINAL — LIVE FEED</div>
   <div id="ticker-track"><div id="ticker-content"></div></div>
@@ -511,1014 +484,19 @@
 
 <!-- SPORTS PANEL -->
 <div id="sports-panel">
-
-  <!-- TEAM WIDGETS — rendered by JS -->
   <div id="team-widgets-container"></div>
-
-  <!-- RIGHT — Standings -->
-  <div id="sports-standings-widget">
-    <div class="sw-title">// DIVISION STANDINGS</div>
-    <div class="sw-body" id="sports-right-top-content"><div style="color:rgba(255,200,230,0.3);font-size:10px;">Loading...</div></div>
-  </div>
-
-  <!-- RIGHT — Last 5 -->
-  <div id="sports-streak-widget">
-    <div class="sw-title">// TEAM STATS</div>
-    <div class="sw-body" id="sports-right-bottom-content"><div style="color:rgba(255,200,230,0.3);font-size:10px;">Loading...</div></div>
-  </div>
-
+  <div id="sports-standings-widget"><div class="sw-title">// DIVISION STANDINGS</div><div class="sw-body" id="sports-right-top-content"><div style="color:rgba(255,200,230,0.3);font-size:10px;">Loading...</div></div></div>
+  <div id="sports-streak-widget"><div class="sw-title">// TEAM STATS</div><div class="sw-body" id="sports-right-bottom-content"><div style="color:rgba(255,200,230,0.3);font-size:10px;">Loading...</div></div></div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@0.6.7/lib/three-vrm.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.6.1/socket.io.min.js"></script>
-
-<script>
-// ─── RENDERER ───
-var canvas = document.getElementById('three-canvas');
-var renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.outputEncoding = THREE.sRGBEncoding;
-
-var scene = new THREE.Scene();
-var camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 100);
-camera.position.set(0, 0.5, 5.0);
-
-function resize() {
-  renderer.setSize(window.innerWidth, window.innerHeight);
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-}
-resize();
-window.addEventListener('resize', resize);
-
-// ─── LIGHTING ───
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-var frontLight = new THREE.DirectionalLight(0xff88cc, 1.2);
-frontLight.position.set(0, 2, 3); scene.add(frontLight);
-var fillLight = new THREE.DirectionalLight(0x88ccff, 0.5);
-fillLight.position.set(-2, 1, 1); scene.add(fillLight);
-var rimLight = new THREE.DirectionalLight(0xff44aa, 0.8);
-rimLight.position.set(0, 3, -2); scene.add(rimLight);
-
-// ─── RAIN PARTICLES ───
-var rainGeo = new THREE.BufferGeometry();
-var rainPos = new Float32Array(300 * 3);
-var rainVel = new Float32Array(300);
-for(var i = 0; i < 300; i++) {
-  rainPos[i*3]   = (Math.random()-0.5)*12;
-  rainPos[i*3+1] = (Math.random()-0.5)*8;
-  rainPos[i*3+2] = -2+Math.random();
-  rainVel[i] = Math.random()*0.015+0.005;
-}
-rainGeo.setAttribute('position', new THREE.BufferAttribute(rainPos, 3));
-var rainMat = new THREE.PointsMaterial({ size:0.015, color:new THREE.Color(0,0.5,1), transparent:true, opacity:0.15 });
-scene.add(new THREE.Points(rainGeo, rainMat));
-
-// ─── FLOAT PARTICLES ───
-var floatGeo = new THREE.BufferGeometry();
-var floatPos = new Float32Array(80*3);
-var floatVel = new Float32Array(80*3);
-for(var i = 0; i < 80; i++) {
-  floatPos[i*3]   = (Math.random()-0.5)*3;
-  floatPos[i*3+1] = Math.random()*3;
-  floatPos[i*3+2] = (Math.random()-0.5)*1.5;
-  floatVel[i*3]   = (Math.random()-0.5)*0.002;
-  floatVel[i*3+1] = Math.random()*0.003+0.001;
-  floatVel[i*3+2] = (Math.random()-0.5)*0.001;
-}
-floatGeo.setAttribute('position', new THREE.BufferAttribute(floatPos, 3));
-var floatMat = new THREE.PointsMaterial({ size:0.025, color:new THREE.Color(1,0.3,0.7), transparent:true, opacity:0.4 });
-scene.add(new THREE.Points(floatGeo, floatMat));
-
-// ─── ANIMATED GRID ───
-var gridSize = 10;
-var gridDivisions = 20;
-var animatedGrid = new THREE.Group();
-scene.add(animatedGrid);
-
-var gridLines = [];
-var gridStep = gridSize / gridDivisions;
-for(var gi = 0; gi <= gridDivisions; gi++) {
-  var pos = -gridSize/2 + gi * gridStep;
-  var geoX = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(-gridSize/2, 0, pos),
-    new THREE.Vector3(gridSize/2, 0, pos)
-  ]);
-  var matX = new THREE.LineBasicMaterial({ color: 0x330022, transparent: true, opacity: 0.6 });
-  var lineX = new THREE.Line(geoX, matX);
-  lineX.position.y = -1.0;
-  lineX.userData.offset = gi * 0.3;
-  animatedGrid.add(lineX);
-  gridLines.push(lineX);
-
-  var geoZ = new THREE.BufferGeometry().setFromPoints([
-    new THREE.Vector3(pos, 0, -gridSize/2),
-    new THREE.Vector3(pos, 0, gridSize/2)
-  ]);
-  var matZ = new THREE.LineBasicMaterial({ color: 0x330022, transparent: true, opacity: 0.6 });
-  var lineZ = new THREE.Line(geoZ, matZ);
-  lineZ.position.y = -1.0;
-  lineZ.userData.offset = gi * 0.3 + 0.15;
-  animatedGrid.add(lineZ);
-  gridLines.push(lineZ);
-}
-
-function animateGrid(t) {
-  for(var gl = 0; gl < gridLines.length; gl++) {
-    var line = gridLines[gl];
-    line.material.opacity = 0.3 + Math.sin(t * 0.8 + line.userData.offset) * 0.25;
-    var r = 0.2 + Math.sin(t * 0.5 + line.userData.offset) * 0.1;
-    var b = 0.1 + Math.sin(t * 0.4 + line.userData.offset + 1.5) * 0.08;
-    line.material.color.setRGB(r, 0, b);
-  }
-}
-
-// ─── VRM ───
-var currentVrm = null;
-var speaking = false;
-var listening = false;
-var thinking = false;
-
-// ─── HAND STATE MACHINE ───
-var handState = 'open';
-var handStateTime = 0;
-var handCurl = 0;
-var OPEN_DURATION_MIN   = 4.0;
-var OPEN_DURATION_MAX   = 9.0;
-var CLOSE_DURATION      = 1.2;
-var CLOSED_DURATION_MIN = 1.5;
-var CLOSED_DURATION_MAX = 3.5;
-var OPEN_ANIM_DURATION  = 1.0;
-var nextStateChange = OPEN_DURATION_MIN + Math.random() * (OPEN_DURATION_MAX - OPEN_DURATION_MIN);
-
-function easeInOut(t) { return t < 0.5 ? 2*t*t : -1+(4-2*t)*t; }
-
-function updateHandState(delta) {
-  handStateTime += delta;
-  if(handState === 'open') {
-    handCurl = 0;
-    if(handStateTime >= nextStateChange) { handState = 'closing'; handStateTime = 0; }
-  } else if(handState === 'closing') {
-    var t = Math.min(handStateTime / CLOSE_DURATION, 1.0);
-    handCurl = easeInOut(t);
-    if(t >= 1.0) { handState = 'closed'; handStateTime = 0; nextStateChange = CLOSED_DURATION_MIN + Math.random() * (CLOSED_DURATION_MAX - CLOSED_DURATION_MIN); }
-  } else if(handState === 'closed') {
-    handCurl = 1.0;
-    if(handStateTime >= nextStateChange) { handState = 'opening'; handStateTime = 0; }
-  } else if(handState === 'opening') {
-    var t = Math.min(handStateTime / OPEN_ANIM_DURATION, 1.0);
-    handCurl = easeInOut(1.0 - t);
-    if(t >= 1.0) { handState = 'open'; handStateTime = 0; nextStateChange = OPEN_DURATION_MIN + Math.random() * (OPEN_DURATION_MAX - OPEN_DURATION_MIN); }
-  }
-}
-
-function applyFingers(h, curl) {
-  var fingerGroups = [
-    ['leftIndexProximal',   'leftIndexIntermediate',   'leftIndexDistal'],
-    ['leftMiddleProximal',  'leftMiddleIntermediate',  'leftMiddleDistal'],
-    ['leftRingProximal',    'leftRingIntermediate',    'leftRingDistal'],
-    ['leftLittleProximal',  'leftLittleIntermediate',  'leftLittleDistal'],
-    ['rightIndexProximal',  'rightIndexIntermediate',  'rightIndexDistal'],
-    ['rightMiddleProximal', 'rightMiddleIntermediate', 'rightMiddleDistal'],
-    ['rightRingProximal',   'rightRingIntermediate',   'rightRingDistal'],
-    ['rightLittleProximal', 'rightLittleIntermediate', 'rightLittleDistal'],
-  ];
-  var openCurl   = [0.2, 0.15, 0.1];   // open — nearly straight
-  var closedCurl = [1.5, 1.7,  1.3];   // closed — full fist
-  for(var gi = 0; gi < fingerGroups.length; gi++) {
-    var group = fingerGroups[gi];
-    var fingerDelay = gi * 0.04;
-    var adjustedCurl = Math.max(0, Math.min(1, curl - fingerDelay));
-    for(var si = 0; si < 3; si++) {
-      var bone = h.getBoneNode(group[si]);
-      if(bone) {
-        var micro = Math.sin(time * 0.8 + gi * 0.6 + si * 0.3) * 0.015 * (1.0 - curl);
-        var curlVal = openCurl[si] + (closedCurl[si] - openCurl[si]) * adjustedCurl + micro;
-        // Left hand fingers curl on Z, right hand on negative Z due to mirroring
-        if(group[0].indexOf('left') !== -1) {
-          bone.rotation.z = curlVal;
-          bone.rotation.x = 0;
-        } else {
-          bone.rotation.z = -curlVal;
-          bone.rotation.x = 0;
-        }
-      }
-    }
-  }
-  var thumbGroups = [
-    ['leftThumbProximal',  'leftThumbIntermediate',  'leftThumbDistal',  1],
-    ['rightThumbProximal', 'rightThumbIntermediate', 'rightThumbDistal', -1],
-  ];
-  var thumbOpen   = [0.3, 0.2, 0.15];
-  var thumbClosed = [0.8, 0.7, 0.6];
-  for(var ti = 0; ti < thumbGroups.length; ti++) {
-    var tg = thumbGroups[ti];
-    var side = tg[3];
-    for(var si = 0; si < 3; si++) {
-      var bone = h.getBoneNode(tg[si]);
-      if(bone) {
-        var curlVal = thumbOpen[si] + (thumbClosed[si] - thumbOpen[si]) * curl;
-        // Curl thumbs inward using Z axis like fingers
-        bone.rotation.z = 0;
-        bone.rotation.x = -curlVal;
-      }
-    }
-  }
-}
-
-// ─── BODY GLITCH ───
-var bodyGlitch = {
-  active: false, timer: 0, nextTrigger: 6 + Math.random() * 10,
-  phase: 0, phaseTime: 0,
-  snapX: 0, snapY: 0, armSnap: 0, headSnap: 0,
-};
-
-function updateBodyGlitch(delta) {
-  bodyGlitch.timer += delta;
-  bodyGlitch.phaseTime += delta;
-  if(bodyGlitch.phase === 0 && bodyGlitch.timer > bodyGlitch.nextTrigger) {
-    bodyGlitch.phase = 1; bodyGlitch.phaseTime = 0; bodyGlitch.timer = 0;
-    bodyGlitch.nextTrigger = 5 + Math.random() * 12;
-    bodyGlitch.snapX = (Math.random()-0.5)*0.3; bodyGlitch.snapY = (Math.random()-0.5)*0.2;
-    bodyGlitch.armSnap = (Math.random()-0.5)*0.8; bodyGlitch.headSnap = (Math.random()-0.5)*0.6;
-  }
-  if(bodyGlitch.phase === 1) {
-    bodyGlitch.active = true;
-    if(bodyGlitch.phaseTime > 0.06 + Math.random()*0.08) {
-      bodyGlitch.snapX = (Math.random()-0.5)*0.25; bodyGlitch.snapY = (Math.random()-0.5)*0.15;
-      bodyGlitch.armSnap = (Math.random()-0.5)*0.6; bodyGlitch.headSnap = (Math.random()-0.5)*0.5;
-      bodyGlitch.phaseTime = 0;
-    }
-    if(bodyGlitch.timer > 0.18) { bodyGlitch.phase = 2; bodyGlitch.phaseTime = 0; bodyGlitch.active = false; }
-  }
-  if(bodyGlitch.phase === 2) {
-    if(bodyGlitch.phaseTime < 0.05) {
-      bodyGlitch.active = true;
-      bodyGlitch.snapX = (Math.random()-0.5)*0.1; bodyGlitch.snapY = (Math.random()-0.5)*0.08;
-      bodyGlitch.armSnap = (Math.random()-0.5)*0.2; bodyGlitch.headSnap = (Math.random()-0.5)*0.15;
-    } else { bodyGlitch.active = false; }
-    if(bodyGlitch.phaseTime > 0.25) { bodyGlitch.phase = 0; bodyGlitch.phaseTime = 0; bodyGlitch.active = false; }
-  }
-}
-
-// ─── LAG SYSTEM ───
-var lagState = {
-  leftArmX: 0, rightArmX: 0,
-  leftHandX: 0.12, leftHandZ: 0,
-  rightHandX: 0.12, rightHandZ: 0,
-  leftFootX: -0.35, rightFootX: -0.38,
-};
-
-function lerp(a, b, t) { return a + (b-a)*t; }
-
-function sn(t, freq, phase) {
-  return Math.sin(t*freq+phase)*0.6 +
-         Math.sin(t*freq*1.3+phase*1.7)*0.3 +
-         Math.sin(t*freq*0.7+phase*0.5)*0.1;
-}
-
-// ─── VRM LOADER ───
-var gltfLoader = new THREE.GLTFLoader();
-gltfLoader.load(
-  '/model',
-  function(gltf) {
-    THREE.VRM.from(gltf).then(function(vrm) {
-      currentVrm = vrm;
-      scene.add(vrm.scene);
-      vrm.scene.rotation.y = Math.PI;
-      vrm.scene.position.set(0, -0.1, 0);
-      vrm.scene.traverse(function(obj) { obj.frustumCulled = false; });
-      // Set resting pose immediately to avoid startup swing
-      if(vrm.humanoid) {
-        var lA = vrm.humanoid.getBoneNode('leftUpperArm');
-        var rA = vrm.humanoid.getBoneNode('rightUpperArm');
-        if(lA) lA.rotation.z =  1.25;
-        if(rA) rA.rotation.z = -1.25;
-      }
-      // Disable spring bone physics to stop body sway
-      if(vrm.springBoneManager) {
-        vrm.springBoneManager.springBoneGroupList = [];
-      }
-      console.log('VRM loaded successfully!');
-    }).catch(function(err) { console.warn('VRM parse failed:', err); });
-  },
-  function(progress) { console.log('Loading: ' + Math.round((progress.loaded/progress.total)*100) + '%'); },
-  function(error) { console.warn('Load error:', error); }
-);
-
-// ─── ANIMATION ───
-var clock = new THREE.Clock();
-var time = 0;
-
-
-// ─── WAVEFORM ───
-var waveCanvas = document.getElementById('waveform-canvas');
-var waveCtx = waveCanvas ? waveCanvas.getContext('2d') : null;
-var wavePhase = 0;
-var waveTargetAmplitude = 3;
-var waveCurrentAmplitude = 0;
-var waveState = 'standby';
-
-function resizeWaveCanvas() {
-  if(!waveCanvas) return;
-  waveCanvas.width = 420;
-  waveCanvas.height = 52;
-}
-resizeWaveCanvas();
-window.addEventListener('resize', resizeWaveCanvas);
-
-function drawWaveform() {
-  if(!waveCtx) { requestAnimationFrame(drawWaveform); return; }
-  var w = waveCanvas.width; var h = waveCanvas.height;
-  waveCtx.clearRect(0, 0, w, h);
-  waveCurrentAmplitude += (waveTargetAmplitude - waveCurrentAmplitude) * 0.08;
-  var r, g, b;
-  if(waveState === 'speaking')  { r=255; g=70;  b=170; wavePhase+=0.12; }
-  else if(waveState === 'listening') { r=0; g=210; b=255; wavePhase+=0.08; }
-  else if(waveState === 'thinking')  { r=180; g=0; b=255; wavePhase+=0.06; }
-  else { r=255; g=70; b=170; wavePhase+=0.02; }
-  var bars = 48; var barW = w/bars; var centerY = h/2;
-  for(var i=0; i<bars; i++) {
-    var t = i/bars;
-    var amp = (Math.sin(t*Math.PI*4+wavePhase)*waveCurrentAmplitude +
-               Math.sin(t*Math.PI*6+wavePhase*1.3)*waveCurrentAmplitude*0.5 +
-               Math.sin(t*Math.PI*2+wavePhase*0.7)*waveCurrentAmplitude*0.3) *
-              Math.sin(t*Math.PI);
-    var barH = Math.max(2, Math.abs(amp));
-    var alpha = Math.min(1, 0.4 + Math.abs(amp)/(h*0.4)*0.6);
-    waveCtx.fillStyle = 'rgba('+r+','+g+','+b+','+alpha+')';
-    waveCtx.beginPath();
-    waveCtx.roundRect(i*barW+barW*0.1, centerY-barH, barW*0.7, barH*2, 2);
-    waveCtx.fill();
-  }
-  requestAnimationFrame(drawWaveform);
-}
-drawWaveform();
-
-// ─── STATS ───
-function updateStats() {
-  fetch('/stats')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      var cpuVal = document.getElementById('cpu-val');
-      var cpuBar = document.getElementById('cpu-bar');
-      var ramVal = document.getElementById('ram-val');
-      var ramBar = document.getElementById('ram-bar');
-      var gpuVal = document.getElementById('gpu-val');
-      var gpuBar = document.getElementById('gpu-bar');
-      if(cpuVal) cpuVal.textContent = data.cpu + '%';
-      if(cpuBar) { cpuBar.style.width = data.cpu + '%'; cpuBar.style.background = data.cpu > 80 ? 'rgba(255,50,50,0.9)' : data.cpu > 50 ? 'rgba(255,180,50,0.8)' : 'rgba(255,80,180,0.7)'; }
-      if(ramVal) ramVal.textContent = data.ram + '%';
-      if(ramBar) { ramBar.style.width = data.ram + '%'; ramBar.style.background = data.ram > 80 ? 'rgba(255,50,50,0.9)' : data.ram > 50 ? 'rgba(255,180,50,0.8)' : 'rgba(255,80,180,0.7)'; }
-      if(gpuVal) gpuVal.textContent = data.gpu + '%';
-      if(gpuBar) { gpuBar.style.width = data.gpu + '%'; gpuBar.style.background = data.gpu > 80 ? 'rgba(255,50,50,0.9)' : data.gpu > 50 ? 'rgba(255,180,50,0.8)' : 'rgba(255,80,180,0.7)'; }
-    }).catch(function() {});
-}
-updateStats();
-setInterval(updateStats, 2000);
-
-// ─── CYPHER POSITION ───
-function updateCypherPosition() {
-  if(currentVrm) {
-    currentVrm.scene.position.x = lerp(currentVrm.scene.position.x, cypherTargetX, 0.04);
-  }
-}
-
-// ─── SAFE IMG ───
-function safeImg(url, cls, size) {
-  size = size || 44;
-  return '<img class="' + cls + '" src="' + url + '" width="' + size + '" height="' + size + '" style="object-fit:contain;flex-shrink:0;">';
-}
-
-function animate() {
-  requestAnimationFrame(animate);
-  var delta = clock.getDelta();
-  time += delta;
-
-  // Rain
-  var rp = rainGeo.attributes.position.array;
-  for(var i = 0; i < 300; i++) {
-    rp[i*3+1] -= rainVel[i] * (speaking ? 2.5 : 1);
-    if(rp[i*3+1] < -4) rp[i*3+1] = 4;
-  }
-  rainGeo.attributes.position.needsUpdate = true;
-
-  // Float particles
-  var fp = floatGeo.attributes.position.array;
-  for(var i = 0; i < 80; i++) {
-    fp[i*3]   += floatVel[i*3];
-    fp[i*3+1] += floatVel[i*3+1];
-    fp[i*3+2] += floatVel[i*3+2];
-    if(fp[i*3+1] > 3.5) { fp[i*3+1] = 0; fp[i*3] = (Math.random()-0.5)*3; }
-    if(Math.abs(fp[i*3])   > 2)   floatVel[i*3]   *= -1;
-    if(Math.abs(fp[i*3+2]) > 1.5) floatVel[i*3+2] *= -1;
-  }
-  floatGeo.attributes.position.needsUpdate = true;
-  floatMat.opacity = 0.3 + (speaking ? Math.sin(time*6)*0.2+0.2 : 0);
-
-  updateHandState(delta);
-  updateBodyGlitch(delta);
-
-  if(currentVrm && currentVrm.humanoid) {
-    var h = currentVrm.humanoid;
-
-    // Position — glitch on Y only, X controlled by mode system
-    updateBodyGlitch(delta);
-    var gy = bodyGlitch.active ? bodyGlitch.snapY : 0;
-    currentVrm.scene.position.y = -0.1 + gy;
-    currentVrm.scene.position.x = 0;
-
-    // Head look-around
-    var lookY = Math.sin(time * 0.4) * 0.8;
-    var lookX = Math.sin(time * 0.3 + 1.2) * 0.3;
-    var cy = Math.cos(lookY/2); var sy = Math.sin(lookY/2);
-    var cx = Math.cos(lookX/2); var sx = Math.sin(lookX/2);
-    var headX = sx*cy; var headY = cx*sy; var headZ = -sx*sy; var headW = cx*cy;
-
-    if(speaking) {
-      headX = lerp(headX, 0, 0.06);
-      headY = lerp(headY, 0, 0.06);
-      headZ = lerp(headZ, 0, 0.06);
-      headW = lerp(headW, 1, 0.06);
-    }
-
-    // Update VRM physics first then override with our pose
-    currentVrm.update(delta);
-
-    currentVrm.humanoid.setPose({
-      head:          { rotation: [headX, headY, headZ, headW] },
-      chest:         { rotation: [0, 0, 0, 1] },
-      spine:         { rotation: [0, 0, 0, 1] },
-      upperChest:    { rotation: [0, 0, 0, 1] },
-      neck:          { rotation: [0, 0, 0, 1] },
-      hips:          { rotation: [0, 0, 0, 1] },
-      leftUpperArm:  { rotation: [0.024, 0.001, 0.571, 0.820] },
-      rightUpperArm: { rotation: [0.003, -0.018, -0.598, 0.801] },
-      leftLowerArm:  { rotation: [-0.020, 0.054, 0.042, 0.997] },
-      rightLowerArm: { rotation: [-0.002, -0.005, -0.027, 1.000] },
-      leftHand:      { rotation: [0.061, -0.004, 0.009, 0.998] },
-      rightHand:     { rotation: [0.040, 0.010, -0.010, 0.999] },
-    });
-
-    // Shoulders — natural hang
-    var lShoulder = h.getBoneNode('leftShoulder');
-    var rShoulder = h.getBoneNode('rightShoulder');
-    if(lShoulder) {
-      lShoulder.rotation.z = 0.0;
-      lShoulder.rotation.x = 0.15;
-      lShoulder.rotation.y = 0;
-    }
-    if(rShoulder) {
-      rShoulder.rotation.z = 0.0;
-      rShoulder.rotation.x = 0.15;
-      rShoulder.rotation.y = 0;
-    }
-
-    // Upper arms — closer to body
-    var lArm = h.getBoneNode('leftUpperArm');
-    var rArm = h.getBoneNode('rightUpperArm');
-    if(lArm) {
-      lArm.rotation.z = 1.2;
-      lArm.rotation.x = 0.15;
-      lArm.rotation.y = 0.1;
-    }
-    if(rArm) {
-      rArm.rotation.z = -1.2;
-      rArm.rotation.x = 0.15;
-      rArm.rotation.y = -0.1;
-    }
-
-    // Forearms — slight forward curve like ref
-    var lForearm = h.getBoneNode('leftLowerArm');
-    var rForearm = h.getBoneNode('rightLowerArm');
-    if(lForearm) {
-      lForearm.rotation.z = 0.042;
-      lForearm.rotation.x = 0.15;
-      lForearm.rotation.y = 0.054;
-    }
-    if(rForearm) {
-      rForearm.rotation.z = -0.027;
-      rForearm.rotation.x = 0.15;
-      rForearm.rotation.y = -0.005;
-    }
-
-    // Wrists — neutral, let fingers do the work
-    var lHand = h.getBoneNode('leftHand');
-    var rHand = h.getBoneNode('rightHand');
-    if(lHand) {
-      lHand.rotation.x = 0.0;
-      lHand.rotation.y = 0.0;
-      lHand.rotation.z = 0.0;
-    }
-    if(rHand) {
-      rHand.rotation.x = 0.0;
-      rHand.rotation.y = 0.0;
-      rHand.rotation.z = 0.0;
-    }
-
-    applyFingers(h, handCurl);
-
-    // Blend shapes
-    if(currentVrm.blendShapeProxy) {
-      if(speaking) {
-        var lipOpen = Math.abs(Math.sin(time*7))*0.5+Math.abs(Math.sin(time*11))*0.2;
-        currentVrm.blendShapeProxy.setValue('A', lipOpen*0.7);
-        currentVrm.blendShapeProxy.setValue('O', lipOpen*0.3);
-      } else {
-        currentVrm.blendShapeProxy.setValue('A', 0);
-        currentVrm.blendShapeProxy.setValue('O', 0);
-      }
-      var blinkTime = time % 5;
-      if(blinkTime > 4.75 && blinkTime < 4.92) {
-        currentVrm.blendShapeProxy.setValue('Blink', (blinkTime-4.75)/0.085);
-      } else {
-        currentVrm.blendShapeProxy.setValue('Blink', 0);
-      }
-    }
-
-  }
-
-  updateCypherPosition();
-  if(gridLines.length > 0) animateGrid(time);
-  renderer.render(scene, camera);
-}
-animate();
-
-// ─── SCANLINE + GLITCH OVERLAY ───
-var scanCanvas = document.getElementById('scanline-canvas');
-var scanCtx = scanCanvas.getContext('2d');
-var scanOffset = 0;
-var glitchTimer = 0;
-var glitchPhase = 0;
-var glitchPhaseTime = 0;
-var glitchNextTrigger = 4 + Math.random() * 8;
-
-function resizeScanCanvas() {
-  scanCanvas.width  = window.innerWidth;
-  scanCanvas.height = window.innerHeight;
-}
-resizeScanCanvas();
-window.addEventListener('resize', resizeScanCanvas);
-
-function drawScanlines() {
-  var w = scanCanvas.width;
-  var h = scanCanvas.height;
-  scanCtx.clearRect(0, 0, w, h);
-
-  scanOffset = (scanOffset + 0.5) % 5;
-  scanCtx.fillStyle = 'rgba(0, 0, 0, 0.15)';
-  for(var y = scanOffset; y < h; y += 5) {
-    scanCtx.fillRect(0, y, w, 1.5);
-  }
-
-  glitchTimer += 0.016;
-  glitchPhaseTime += 0.016;
-
-  if(glitchPhase === 0 && glitchTimer > glitchNextTrigger) {
-    glitchPhase = 1; glitchPhaseTime = 0;
-    glitchNextTrigger = 5 + Math.random() * 10; glitchTimer = 0;
-  }
-  if(glitchPhase === 1) {
-    if(Math.random() > 0.4) { scanCtx.fillStyle = 'rgba(120,255,160,0.04)'; scanCtx.fillRect(0,0,w,h); }
-    if(glitchPhaseTime > 0.08) { glitchPhase = 2; glitchPhaseTime = 0; }
-  }
-  if(glitchPhase === 2) {
-    var slices = 4 + Math.floor(Math.random()*6);
-    for(var s = 0; s < slices; s++) {
-      var sy = Math.random()*h; var sh = 3+Math.random()*20; var sdx = (Math.random()-0.5)*40;
-      scanCtx.fillStyle = 'rgba(0,255,120,'+(0.08+Math.random()*0.12)+')';
-      scanCtx.fillRect(sdx, sy, w, sh);
-      scanCtx.fillStyle = 'rgba(255,0,80,'+(0.04+Math.random()*0.06)+')';
-      scanCtx.fillRect(sdx+3, sy+1, w, sh*0.5);
-    }
-    if(Math.random()>0.5) { scanCtx.fillStyle='rgba(120,255,180,0.25)'; scanCtx.fillRect(0,Math.random()*h,w,2); }
-    if(glitchPhaseTime > 0.12+Math.random()*0.1) { glitchPhase = 3; glitchPhaseTime = 0; }
-  }
-  if(glitchPhase === 3) {
-    if(Math.random()>0.6) { scanCtx.fillStyle='rgba(0,255,120,0.06)'; scanCtx.fillRect((Math.random()-0.5)*10,Math.random()*h,w,2+Math.random()*4); }
-    if(glitchPhaseTime > 0.2) { glitchPhase = 0; glitchPhaseTime = 0; }
-  }
-
-  var vignette = scanCtx.createRadialGradient(w/2,h/2,h*0.3,w/2,h/2,h*0.85);
-  vignette.addColorStop(0,'rgba(0,0,0,0)');
-  vignette.addColorStop(1,'rgba(0,0,0,0.5)');
-  scanCtx.fillStyle = vignette;
-  scanCtx.fillRect(0,0,w,h);
-
-  requestAnimationFrame(drawScanlines);
-}
-drawScanlines();
-
-// ─── UI STATE ───
-var statusDot   = document.getElementById('status-dot');
-var statusLabel = document.getElementById('status-label');
-var termDot     = document.getElementById('term-dot');
-var termStatus  = document.getElementById('term-status');
-var log         = document.getElementById('log');
-
-var statusColors = {
-  standby:  'rgba(255,70,170,0.4)',
-  listening:'rgba(0,210,255,0.9)',
-  thinking: 'rgba(180,0,255,0.9)',
-  speaking: 'rgba(255,70,170,1.0)',
-  muted:    'rgba(80,80,80,0.6)',
-};
-var statusLabels = {
-  standby:  'STANDING BY',
-  listening:'LISTENING',
-  thinking: 'THINKING',
-  speaking: 'TRANSMITTING',
-  muted:    'MUTED',
-};
-
- lastCypherText = '';
-
-function addLog(cls, text) {
-  var el = document.createElement('div');
-  el.className = 'log-entry ' + cls;
-  el.textContent = text;
-  log.appendChild(el);
-  log.scrollTop = log.scrollHeight;
-  while(log.children.length > 20) log.removeChild(log.firstChild);
-}
-
-function applyState(data) {
-  var col = statusColors[data.status] || statusColors.standby;
-  var lbl = statusLabels[data.status] || 'STANDING BY';
-  statusDot.style.background = col;
-  termDot.style.background   = col;
-  statusLabel.textContent    = lbl;
-  termStatus.textContent     = lbl;
-  speaking  = data.status === 'speaking';
-  listening = data.status === 'listening';
-  thinking  = data.status === 'thinking';
-
-  waveState = data.status;
-  if(data.status === 'speaking') {
-    waveTargetAmplitude = 18;
-  } else if(data.status === 'listening') {
-    waveTargetAmplitude = 12;
-  } else if(data.status === 'thinking') {
-    waveTargetAmplitude = 8;
-  } else {
-    waveTargetAmplitude = 3;
-  }
-  if(data.user_text && data.user_text !== lastUserText) {
-    lastUserText = data.user_text;
-    addLog('log-usr', data.user_text);
-  }
-  if(data.cypher_text && data.cypher_text !== lastCypherText) {
-    lastCypherText = data.cypher_text;
-    addLog('log-cyp', data.cypher_text);
-  }
-  var fl = document.getElementById('cypher-status-label');
-  if(fl) fl.textContent = lbl;
-}
-
-// ─── STATE + MODE POLLING ───
-var socket = io();
-socket.on('connect', function() { addLog('log-system', 'BLACKWALL LINK ESTABLISHED'); });
-socket.on('disconnect', function() { addLog('log-system', 'CONNECTION LOST'); });
-
-var lastState = '';
-var lastUserText = '';
-var lastCypherText = '';
-
-setInterval(function() {
-  fetch('/state')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      if(data.status !== lastState) {
-        lastState = data.status;
-        applyState(data);
-      } else {
-        applyState(data);
-      }
-      if(data.mode && data.mode !== currentMode) {
-        setMode(data.mode);
-      }
-    })
-    .catch(function() {});
-}, 200);
-
-// ─── DUAL CLOCK ───
-function updateClocks() {
-  var now = new Date();
-
-  // Eastern Time
-  var estOpts = { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-  var estDateOpts = { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' };
-  document.getElementById('clock-est').textContent = now.toLocaleTimeString('en-US', estOpts);
-  document.getElementById('date-est').textContent = now.toLocaleDateString('en-US', estDateOpts);
-
-  // Thailand Time (UTC+7)
-  var thOpts = { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-  var thDateOpts = { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' };
-  document.getElementById('clock-th').textContent = now.toLocaleTimeString('en-US', thOpts);
-  document.getElementById('date-th').textContent = now.toLocaleDateString('en-US', thDateOpts);
-}
-updateClocks();
-setInterval(updateClocks, 1000);
-
-// ─── WEATHER ───
-function fetchWeather(location, tempEl, descEl, useFahrenheit) {
-  var url = '/weather/' + location;
-  fetch(url)
-    .then(function(r) { return r.text(); })
-    .then(function(data) {
-      var clean = data.trim();
-      clean = clean.trim()
-      clean = clean.replace(/\+/g, '').replace(/\xb0/g, '').replace(/\xc2/g, '');
-      var parts = clean.split(' ').filter(function(p) { return p.length > 0; });
-      var temp = parts[0] || '--';
-      var desc = parts.slice(1).join(' ') || '--';
-      if(temp.indexOf('<') !== -1 || temp.length > 8) {
-        tempEl.textContent = '--';
-        descEl.textContent = 'UNAVAILABLE';
-        return;
-      }
-      tempEl.textContent = temp;
-      descEl.textContent = desc.toUpperCase().substring(0, 20);
-    })
-    .catch(function() {
-      tempEl.textContent = '--';
-      descEl.textContent = 'UNAVAILABLE';
-    });
-}
-
-// Fetch on load and every 10 minutes
-function updateWeather() {
-  fetchWeather('Marietta,PA', document.getElementById('weather-home'), document.getElementById('weather-home-desc'));
-  fetchWeather('Chiang+Mai,Thailand', document.getElementById('weather-thai'), document.getElementById('weather-thai-desc'));
-}
-updateWeather();
-setInterval(updateWeather, 600000);
-
-// ─── WAVEFORM VISUALIZER ───
-var waveCanvas = document.getElementById('waveform-canvas');
-var waveCtx = waveCanvas.getContext('2d');
-var wavePhase = 0;
-var waveTargetAmplitude = 0;
-var waveCurrentAmplitude = 0;
-var waveState = 'standby';
-
-function resizeWaveCanvas() {
-  waveCanvas.width  = 400;
-  waveCanvas.height = 48;
-}
-resizeWaveCanvas();
-window.addEventListener('resize', resizeWaveCanvas);
-
-// ─── MODE SYSTEM ───
-var currentMode = 'home';
-var cypherTargetX = 0;
-var sportsPollInterval = null;
-
-function setMode(mode) {
-  currentMode = mode;
-  var sportsPanel = document.getElementById('sports-panel');
-  var locationPanel = document.getElementById('location-panel');
-  var statsPanel = document.getElementById('stats-panel');
-  var terminalPanel = document.getElementById('terminal-panel');
-
-  if(mode === 'sports') {
-    cypherTargetX = 0;
-    sportsPanel.classList.add('active');
-    if(locationPanel) locationPanel.style.opacity = '0';
-    if(statsPanel) statsPanel.style.opacity = '0';
-    var ticker = document.getElementById('scores-ticker');
-    if(ticker) ticker.classList.add('active');
-    // Wait for panel transition then fetch
-    setTimeout(fetchSportsData, 500);
-    setTimeout(fetchSportsData, 2000);
-    sportsPollInterval = setInterval(fetchSportsData, 30000);
-  } else {
-    cypherTargetX = 0;
-    sportsPanel.classList.remove('active');
-    if(locationPanel) locationPanel.style.opacity = '1';
-    if(statsPanel) statsPanel.style.opacity = '1';
-    var ticker = document.getElementById('scores-ticker');
-    if(ticker) ticker.classList.remove('active');
-    if(sportsPollInterval) { clearInterval(sportsPollInterval); sportsPollInterval = null; }
-  }
-}
-
-function fetchSportsData() {
-  fetch('/sports')
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      renderSports(data);
-      renderStandingsAndStreak(data);
-      renderTicker(data);
-    })
-    .catch(function() {});
-}
-
-function renderStandingsAndStreak(data) {
-  // Standings
-  var topEl = document.getElementById('sports-right-top-content');
-  if(topEl && data.standings && data.standings.length > 0) {
-    var html = '';
-    data.standings.forEach(function(s) {
-      var cls = s.is_my_team ? ' standing-mine' : '';
-      html += '<div class="standing-row' + cls + '">' +
-        '<span class="standing-name">' + s.name + '</span>' +
-        '<span class="standing-record">' + s.record + '</span>' +
-        '</div>';
-    });
-    topEl.innerHTML = html;
-  }
-
-  // Team stats per active team
-  var botEl = document.getElementById('sports-right-bottom-content');
-  if(botEl && data.teams) {
-    var html = '';
-    var active = data.teams.filter(function(t) { return t.active !== false && t.player_stats && t.player_stats.length > 0; });
-    if(active.length === 0) {
-      botEl.innerHTML = '<div style="color:rgba(255,200,230,0.3);font-size:9px;">Loading stats...</div>';
-      return;
-    }
-    active.forEach(function(t) {
-      html += '<div style="margin-bottom:12px;">' +
-        '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">' +
-          logoImg(t.our_logo, 20) +
-          '<div style="font-size:9px;color:rgba(0,200,255,0.7);letter-spacing:0.1em;">' + t.name.replace('Tampa Bay ','TB ') + '</div>' +
-        '</div>';
-      t.player_stats.forEach(function(s) {
-        html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 4px;font-size:13px;border-bottom:1px solid rgba(255,60,180,0.1);">' +
-          '<span style="color:rgba(255,80,180,0.8);letter-spacing:0.08em;">' + s.label + '</span>' +
-          '<span style="color:rgba(255,200,230,0.95);font-weight:bold;font-size:15px;">' + s.value + '</span>' +
-          '</div>';
-      });
-      html += '</div>';
-    });
-    botEl.innerHTML = html;
-  }
-}
-
-function renderTicker(data) {
-  var ticker = document.getElementById('scores-ticker');
-  var tickerContent = document.getElementById('ticker-content');
-  if(!ticker || !tickerContent || !data.teams) return;
-
-  var segments = [];
-  data.teams.forEach(function(t) {
-    var name = t.name.replace('Tampa Bay ', 'TB ');
-    var seg = '<div class="ticker-item">';
-    seg += '<img class="ticker-logo" src="' + t.our_logo + '" width="44" height="44" style="object-fit:contain;flex-shrink:0;">';
-    seg += '<div class="ticker-info">';
-    seg += '<div class="ticker-name">' + name + '</div>';
-    seg += '<div class="ticker-record">' + t.record + '</div>';
-
-    if(t.state === 'in') {
-      seg += '<div class="ticker-game" style="color:rgba(255,50,50,0.9);font-size:9px;">● LIVE</div>';
-      seg += '</div>';
-      seg += '<div class="ticker-score">' + t.our_score + '</div>';
-      seg += '<div style="font-size:18px;color:rgba(255,200,230,0.3);margin:0 4px;">—</div>';
-      seg += '<div class="ticker-score">' + t.opp_score + '</div>';
-      if(t.opponent_logo) seg += '<img class="ticker-opp-logo" src="' + t.opponent_logo + '" width="36" height="36" style="object-fit:contain;opacity:0.7;">';
-      seg += '<div class="ticker-info" style="margin-left:6px;"><div class="ticker-name">' + t.opponent.replace('Tampa Bay ','TB ') + '</div><div class="ticker-game">' + t.status_detail + '</div></div>';
-    } else if(t.game_today && t.state === 'pre') {
-      seg += '<div class="ticker-game">vs ' + t.opponent + '</div></div>';
-      seg += '<div class="ticker-vs" style="margin:0 10px;">VS</div>';
-      if(t.opponent_logo) seg += '<img class="ticker-opp-logo" src="' + t.opponent_logo + '" width="36" height="36" style="object-fit:contain;opacity:0.7;">';
-      seg += '<div class="ticker-time" style="margin-left:10px;">' + t.game_time + '</div>';
-    } else if(t.state === 'post') {
-      var won = parseInt(t.our_score) > parseInt(t.opp_score);
-      var col = won ? 'rgba(50,255,100,0.9)' : 'rgba(255,50,50,0.9)';
-      seg += '</div>';
-      seg += '<div style="font-size:18px;font-weight:bold;color:' + col + ';margin:0 8px;">' + t.our_score + ' — ' + t.opp_score + '</div>';
-      seg += '<div style="font-size:10px;font-weight:bold;color:' + col + ';">' + (won?'WIN':'LOSS') + '</div>';
-      if(t.opponent_logo) seg += '<img src="' + t.opponent_logo + '" width="32" height="32" style="object-fit:contain;opacity:0.7;margin-left:8px;">';
-    } else {
-      seg += '<div class="ticker-game" style="color:rgba(255,200,230,0.25);">OFF TODAY</div></div>';
-    }
-    seg += '</div>';
-
-    // News headlines
-    if(t.news && t.news.length > 0) {
-      t.news.forEach(function(headline) {
-        if(!headline) return;
-        segments.push('<div class="ticker-divider"></div>');
-        segments.push('<div class="ticker-item">' +
-          '<img src="' + t.our_logo + '" width="36" height="36" style="object-fit:contain;flex-shrink:0;">' +
-          '<span class="ticker-news-badge news" style="margin-left:8px;">NEWS</span>' +
-          '<div class="ticker-news-text" style="margin-left:8px;">' + headline + '</div>' +
-          '</div>');
-      });
-    }
-
-    segments.push(seg);
-    segments.push('<div class="ticker-divider"></div>');
-  });
-
-  tickerContent.innerHTML = segments.join('');
-  ticker.classList.add('active');
-}
-
-function logoImg(url, size) {
-  size = size || 32;
-  if(!url) return '';
-  return '<img src="' + url + '" width="' + size + '" height="' + size + '" style="object-fit:contain;opacity:0.9;flex-shrink:0;">';
-}
-
-function renderSports(data) {
-  if(!data || !data.teams) return;
-  var container = document.getElementById('team-widgets-container');
-  if(!container) return;
-
-  var positions = [
-    { left: 10, top: 10,  width: 240 },
-    { left: 10, top: 150, width: 210 },
-    { left: 10, top: 280, width: 225 },
-    { left: 10, top: 400, width: 190 },
-    { left: 10, top: 505, width: 205 },
-  ];
-
-  var html = '';
-  data.teams.forEach(function(t, i) {
-    var pos = positions[i] || positions[4];
-    var name = t.name.replace('Tampa Bay ', 'TB ');
-    var isLive = t.state === 'in';
-    var isPost = t.state === 'post';
-    var liveCls = isLive ? ' live' : '';
-
-    html += '<div class="team-widget' + liveCls + '" style="left:' + pos.left + 'px;top:' + pos.top + 'px;width:' + pos.width + 'px;">';
-
-    // Header
-    html += '<div class="tw-header">' +
-      logoImg(t.our_logo, isLive ? 36 : 28) +
-      '<div style="flex:1;min-width:0;margin-left:8px;">' +
-        '<div class="tw-name">' + (isLive ? '<span class="live-dot"></span>' : '') + name + '</div>' +
-        '<div class="tw-record">' + t.record + '</div>' +
-      '</div>';
-
-    if(t.game_today && t.state === 'pre') {
-      html += '<div style="text-align:right;"><div class="tw-time">' + t.game_time + '</div></div>';
-    } else if(!t.game_today) {
-      html += '<div class="tw-off">OFF</div>';
-    }
-    html += '</div>';
-
-    // Body
-    if(isLive) {
-      html += '<div class="tw-body">' +
-        '<div class="tw-score-row">' +
-          '<div class="tw-score">' + t.our_score + '</div>' +
-          '<div class="tw-dash">—</div>' +
-          '<div class="tw-score">' + t.opp_score + '</div>' +
-          '<div style="flex:1;"></div>' +
-          logoImg(t.opponent_logo, 22) +
-          '<div style="margin-left:6px;">' +
-            '<div class="tw-opp-name">' + t.opponent.replace('Tampa Bay ','TB ') + '</div>' +
-            '<div class="tw-detail">' + t.status_detail + '</div>' +
-          '</div>' +
-        '</div>';
-      if(t.player_stats && t.player_stats.length > 0) {
-        html += '<div style="display:flex;gap:8px;margin-top:5px;flex-wrap:wrap;">';
-        t.player_stats.slice(0,4).forEach(function(s) {
-          html += '<div style="font-size:10px;color:rgba(0,200,255,0.7);">' + s.label + ': <span style="color:rgba(255,200,230,0.95);font-weight:bold;">' + s.value + '</span></div>';
-        });
-        html += '</div>';
-      }
-      html += '</div>';
-    } else if(isPost) {
-      var won = parseInt(t.our_score) > parseInt(t.opp_score);
-      var col = won ? 'rgba(50,255,100,0.9)' : 'rgba(255,50,50,0.8)';
-      html += '<div class="tw-body">' +
-        '<div class="tw-score-row">' +
-          '<div style="font-size:20px;font-weight:bold;color:' + col + ';">' + t.our_score + ' — ' + t.opp_score + '</div>' +
-          '<div style="margin-left:8px;font-size:9px;font-weight:bold;color:' + col + ';">' + (won?'WIN':'LOSS') + '</div>' +
-          '<div style="flex:1;"></div>' +
-          logoImg(t.opponent_logo, 22) +
-        '</div>' +
-        '<div class="tw-detail" style="margin-top:2px;">FINAL vs ' + t.opponent.replace('Tampa Bay ','TB ') + '</div>' +
-      '</div>';
-    } else if(t.game_today && t.state === 'pre') {
-      html += '<div class="tw-body">' +
-        '<div class="tw-opp">' +
-          logoImg(t.opponent_logo, 22) +
-          '<div style="margin-left:8px;"><div class="tw-opp-name">vs ' + t.opponent.replace('Tampa Bay ','TB ') + '</div></div>' +
-        '</div>' +
-      '</div>';
-    }
-
-    html += '</div>';
-  });
-
-  container.innerHTML = html;
-
-  // Position right widgets
-  var standingsEl = document.getElementById('sports-standings-widget');
-  var streakEl = document.getElementById('sports-streak-widget');
-  if(standingsEl && streakEl) {
-    standingsEl.style.top = '10px';
-    streakEl.style.top = (standingsEl.offsetHeight + 20) + 'px';
-  }
-}
-
-</script>
+<script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+<script src="cypher-vrm.js"></script>
+<script src="cypher-ui.js"></script>
+<script src="cypher-sports.js"></script>
+<script src="cypher-globe.js"></script>
 </body>
 </html>

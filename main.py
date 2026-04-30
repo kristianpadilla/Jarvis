@@ -22,9 +22,13 @@ import webbrowser
 import pyautogui
 import keyboard
 import sys
+import dateparser
 from cypher_ui import start_ui, set_ui_state
 
 load_dotenv()
+
+# User home directory — set CYPHER_USER_HOME in .env to your Windows username path
+USER_HOME = os.getenv('CYPHER_USER_HOME', r'C:\Users\krist')
 
 el_client = ElevenLabs(api_key=os.getenv("ELEVENLABS_API_KEY"))
 claude = anthropic.Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
@@ -84,9 +88,16 @@ APPS = {
     "snip":          r"C:\Windows\System32\SnippingTool.exe",
 }
 
-# ─────────────────────────────────────────────
-# FILE MANAGER
-# ─────────────────────────────────────────────
+# ─── SESSION LOG ─────────────────────────────────────────────────────────────
+def log_session(text):
+    """Post an entry to the UI session log widget."""
+    try:
+        requests.post("http://localhost:5000/session-log/add",
+                      json={"text": text}, timeout=2)
+    except:
+        pass
+
+# ─── FILE MANAGER ─────────────────────────────────────────────────────────────
 
 SEARCH_FOLDERS = [
     r"C:\Users\krist\Desktop",
@@ -203,7 +214,6 @@ def handle_file_request(command_lower):
             pending_file_op = {"type": None, "files": [], "selected": None}
             return "Cancelled. File stays where it is."
 
-    # Folder shortcuts
     FOLDER_SHORTCUTS = {
         "screenshots":  r"C:\Users\krist\Pictures\Screenshots",
         "pictures":     r"C:\Users\krist\Pictures",
@@ -229,7 +239,6 @@ def handle_file_request(command_lower):
     file_request = any(t in command_lower for t in search_triggers)
 
     if file_request:
-        # Check folder shortcuts first
         for folder_name, folder_path in FOLDER_SHORTCUTS.items():
             if folder_name in command_lower:
                 try:
@@ -664,7 +673,6 @@ def is_upcoming_request(command_lower):
     return any(t in command_lower for t in UPCOMING_TRIGGERS)
 
 def handle_score_request(command_lower):
-    # Specific team mentioned
     for team in FAVORITE_TEAMS:
         for kw in team["keywords"]:
             if kw in command_lower:
@@ -672,7 +680,6 @@ def handle_score_request(command_lower):
                 if score:
                     return score
                 return f"No game data found for the {team['name']} today."
-    # No specific team — return full today's schedule
     live = get_any_live_score()
     if live:
         return f"Live right now — {live}"
@@ -729,7 +736,12 @@ def is_hallucination(text):
         "turn", "set", "find", "search", "go", "close", "thank", "thanks",
         "that", "yes", "no", "okay", "ok", "cypher", "jarvis", "gaming",
         "i", "my", "the", "a", "an", "it", "its", "sports", "take",
-        "gaming", "home", "back", "grab", "pull", "give", "any", "ignore"
+        "gaming", "home", "back", "grab", "pull", "give", "any", "ignore",
+        "add", "schedule", "remind", "delete", "cancel", "timer",
+        "one", "two", "three", "four", "five", "six", "seven", "eight",
+        "nine", "ten", "fifteen", "twenty", "thirty", "forty", "fifty",
+        "sixty", "ninety", "minute", "minutes", "hour", "hours", "second", "seconds",
+        "count", "countdown", "goal", "goals", "clear", "mark", "complete",
     ]
     if len(words) <= 2 and not any(w in known_starters for w in words):
         return True
@@ -838,7 +850,6 @@ def is_discord_command(command_lower):
             return True
     return False
 
-# Apps that need URI launch instead of direct exe
 URI_APPS = {
     "spotify":  "spotify:",
     "claude":   "claude:",
@@ -849,7 +860,6 @@ def open_app(app_name):
     app_name_lower = app_name.lower()
     for key in APPS:
         if key in app_name_lower:
-            # Use URI for protected WindowsApps
             if key in URI_APPS:
                 try:
                     os.startfile(URI_APPS[key])
@@ -860,7 +870,6 @@ def open_app(app_name):
                 subprocess.Popen([APPS[key]])
                 return True
             except PermissionError:
-                # Fallback to os.startfile
                 try:
                     os.startfile(APPS[key])
                     return True
@@ -904,24 +913,499 @@ def gaming_mode():
     time.sleep(2)
     os.startfile("discord:")
 
+# ─── TIMER HELPERS ───────────────────────────────────────────────────────────
+WORD_TO_NUM = {
+    'one': 1, 'two': 2, 'three': 3, 'four': 4, 'five': 5,
+    'six': 6, 'seven': 7, 'eight': 8, 'nine': 9, 'ten': 10,
+    'eleven': 11, 'twelve': 12, 'thirteen': 13, 'fourteen': 14, 'fifteen': 15,
+    'sixteen': 16, 'seventeen': 17, 'eighteen': 18, 'nineteen': 19, 'twenty': 20,
+    'twenty-one': 21, 'twenty one': 21, 'twenty-two': 22, 'twenty two': 22,
+    'twenty-three': 23, 'twenty three': 23, 'twenty-four': 24, 'twenty four': 24,
+    'twenty-five': 25, 'twenty five': 25, 'twenty-six': 26, 'twenty six': 26,
+    'twenty-seven': 27, 'twenty seven': 27, 'twenty-eight': 28, 'twenty eight': 28,
+    'twenty-nine': 29, 'twenty nine': 29, 'thirty': 30, 'forty': 40, 'forty-five': 45,
+    'forty five': 45, 'fifty': 50, 'sixty': 60, 'ninety': 90, 'a': 1, 'an': 1,
+}
+
+def words_to_digits(text):
+    result = text
+    for word, num in sorted(WORD_TO_NUM.items(), key=lambda x: len(x[0]), reverse=True):
+        result = re.sub(r'\b' + word + r'\b', str(num), result)
+    return result
+
+def parse_timer_seconds(command_lower):
+    normalized = words_to_digits(command_lower)
+    patterns = [
+        r'timer\s+for\s+(\d+)\s*(hour|hr|minute|min|second|sec)s?',
+        r'(\d+)\s*(hour|hr|minute|min|second|sec)s?\s+timer',
+        r'remind\s+me\s+in\s+(\d+)\s*(hour|hr|minute|min|second|sec)s?',
+        r'(\d+)\s*(hour|hr|minute|min|second|sec)s?\s+(?:from\s+now|countdown)',
+        r'set\s+(?:a\s+)?(\d+)\s*(hour|hr|minute|min|second|sec)s?',
+        r'for\s+(\d+)\s*(hour|hr|minute|min|second|sec)s?',
+        r'(\d+)\s*(hour|hr|minute|min|second|sec)s?',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, normalized)
+        if m:
+            amount = int(m.group(1))
+            unit = m.group(2).lower()
+            if unit in ('hour', 'hr'):
+                return amount * 3600
+            elif unit in ('minute', 'min'):
+                return amount * 60
+            else:
+                return amount
+    return None
+
+def format_timer_label(seconds):
+    if seconds >= 3600:
+        h = seconds // 3600
+        return f"{h} HOUR TIMER"
+    elif seconds >= 60:
+        m = seconds // 60
+        return f"{m} MINUTE TIMER"
+    else:
+        return f"{seconds} SECOND TIMER"
+
+def trigger_ui_timer(seconds, label):
+    try:
+        requests.post("http://localhost:5000/timer/set",
+                      json={"seconds": seconds, "label": label}, timeout=3)
+    except Exception as e:
+        print(f"Timer UI error: {e}")
+
+def reset_ui_timer():
+    try:
+        requests.post("http://localhost:5000/timer/reset", timeout=3)
+    except Exception as e:
+        print(f"Timer reset error: {e}")
+
+# ─── CALENDAR HELPERS ─────────────────────────────────────────────────────────
+def parse_calendar_add(command_lower):
+    try:
+        est = pytz.timezone('America/New_York')
+        now = datetime.now(est)
+        trigger_words = [
+            'can you', 'could you', 'please', 'i want to', 'i need to', 'i would like to',
+            'on my calendar', 'to my calendar', 'on the calendar', 'to the calendar',
+            'remind me about', 'set up', 'create', 'add to', 'put on',
+            'add a', 'add an', 'add the', 'add',
+            'schedule a', 'schedule an', 'schedule the', 'schedule',
+            'book a', 'book an', 'book the', 'book',
+            'put a', 'put an', 'put the', 'put',
+        ]
+        clean = command_lower
+        for t in sorted(trigger_words, key=len, reverse=True):
+            clean = clean.replace(t, ' ')
+        clean = ' '.join(clean.split()).strip()
+        time_str = "09:00"
+        time_match = re.search(r'at\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)', clean)
+        if time_match:
+            time_raw = time_match.group(1).strip()
+            if not re.search(r'am|pm', time_raw):
+                hour = int(re.match(r'(\d{1,2})', time_raw).group(1))
+                if hour <= 8:
+                    time_raw = time_raw + ' pm'
+            parsed_time = dateparser.parse(time_raw)
+            if parsed_time:
+                time_str = parsed_time.strftime("%H:%M")
+            clean = clean.replace(time_match.group(0), ' ')
+        date_str = f"{now.month}/{now.day}/{now.year}"
+        day_match = re.search(
+            r'(tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday|'
+            r'next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|week)|'
+            r'(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}|'
+            r'\d{1,2}/\d{1,2}(?:/\d{2,4})?)',
+            clean
+        )
+        if day_match:
+            parsed_date = dateparser.parse(day_match.group(0), settings={
+                'PREFER_DATES_FROM': 'future',
+                'RETURN_AS_TIMEZONE_AWARE': True,
+                'TIMEZONE': 'America/New_York'
+            })
+            if parsed_date:
+                date_str = f"{parsed_date.month}/{parsed_date.day}/{parsed_date.year}"
+            clean = clean.replace(day_match.group(0), ' ')
+        filler = ['the', 'a', 'an', 'for', 'my', 'me', 'in', 'this',
+                  'calendar', 'event', 'appointment', 'reminder', 'am', 'pm',
+                  'game', 'match', 'tonight', 'today', 'tomorrow', 'on', 'at']
+        title = clean
+        for f in filler:
+            title = re.sub(r'\b' + f + r'\b', ' ', title)
+        title = ' '.join(title.split()).strip().title()
+        original = command_lower
+        team_titles = {
+            'lightning': 'Lightning Game', 'rays': 'Rays Game',
+            'magic': 'Magic Game', 'bucs': 'Bucs Game',
+            'buccaneers': 'Buccaneers Game', 'ducks': 'Ducks Game',
+        }
+        for keyword, team_title in team_titles.items():
+            if keyword in original:
+                title = team_title
+                break
+        if 'phone interview' in original or 'phone screen' in original:
+            title = 'Phone Interview'
+        elif 'interview' in original:
+            title = 'Interview'
+        if len(title) < 2:
+            title = "Event"
+        return date_str, time_str, title
+    except Exception as e:
+        print(f"Calendar parse error: {e}")
+        return None
+
+CALENDAR_DELETE_TRIGGERS = ["delete", "remove", "cancel the", "clear"]
+
+def add_calendar_event_from_voice(date_str, time_str, title):
+    try:
+        r = requests.post("http://localhost:5000/calendar/add",
+                          json={"date": date_str, "time": time_str, "title": title},
+                          timeout=3)
+        return r.json().get("status") == "ok"
+    except Exception as e:
+        print(f"Calendar add error: {e}")
+        return False
+
+def delete_calendar_event_from_voice(command_lower):
+    try:
+        r = requests.get("http://localhost:5000/calendar", timeout=3)
+        all_events = r.json().get("events", [])
+        if not all_events:
+            return "Nothing on the calendar to delete, Nine."
+        target_date = None
+        try:
+            est = pytz.timezone('America/New_York')
+            day_match = re.search(
+                r'(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|'
+                r'next\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|'
+                r'(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}|'
+                r'\d{1,2}/\d{1,2}(?:/\d{2,4})?)',
+                command_lower
+            )
+            if day_match:
+                parsed = dateparser.parse(day_match.group(0), settings={
+                    'PREFER_DATES_FROM': 'future',
+                    'RETURN_AS_TIMEZONE_AWARE': True,
+                    'TIMEZONE': 'America/New_York'
+                })
+                if parsed:
+                    target_date = f"{parsed.month}/{parsed.day}/{parsed.year}"
+        except:
+            pass
+        if target_date:
+            filtered = [(i, e) for i, e in enumerate(all_events) if e.get('date') == target_date]
+            if not filtered:
+                return f"No events found on {target_date}, Nine."
+        else:
+            est = pytz.timezone('America/New_York')
+            today_dt = datetime.now(est)
+            today = f"{today_dt.month}/{today_dt.day}/{today_dt.year}"
+            filtered = [(i, e) for i, e in enumerate(all_events) if e.get('date') == today]
+            if not filtered:
+                filtered = [(i, e) for i, e in enumerate(all_events)]
+        filtered.sort(key=lambda x: x[1].get('time', ''))
+        position = 1
+        word_nums = {
+            'first': 1, 'one': 1, '1': 1,
+            'second': 2, 'two': 2, '2': 2,
+            'third': 3, 'three': 3, '3': 3,
+            'fourth': 4, 'four': 4, '4': 4,
+            'fifth': 5, 'five': 5, '5': 5,
+        }
+        hash_match = re.search(r'#(\d+)', command_lower)
+        if hash_match:
+            position = int(hash_match.group(1))
+        else:
+            for word, num in word_nums.items():
+                if re.search(r'\b' + word + r'\b', command_lower):
+                    position = num
+                    break
+        if position > len(filtered):
+            return f"There are only {len(filtered)} events there, Nine."
+        actual_idx, event = filtered[position - 1]
+        r = requests.post("http://localhost:5000/calendar/delete",
+                          json={"index": actual_idx}, timeout=3)
+        if r.json().get("status") == "ok":
+            return f"Deleted — {event.get('title')} at {event.get('time')}."
+        return "Couldn't delete that, Nine."
+    except Exception as e:
+        print(f"Calendar delete error: {e}")
+        return "Something went wrong with the calendar, Nine."
+
+def get_todays_calendar_events():
+    try:
+        r = requests.get("http://localhost:5000/calendar/today", timeout=3)
+        return r.json().get("events", [])
+    except:
+        return []
+
+# ─── GOALS & COUNTDOWN HANDLERS ───────────────────────────────────────────────
+def handle_goals_command(cmd):
+    """Handle all goal-related voice commands. Returns response string or None."""
+
+    # Add a goal — "add a goal: finish the report"
+    if re.search(r'add (a )?goal[s]?\s*[:\-]\s*', cmd):
+        match = re.search(r'add (a )?goal[s]?\s*[:\-]\s*(.+)', cmd, re.IGNORECASE)
+        if match:
+            goal_text = match.group(2).strip()
+            try:
+                r = requests.post("http://localhost:5000/goals/add",
+                                  json={"text": goal_text}, timeout=3)
+                if r.json().get("status") == "ok":
+                    log_session(f"Goal added: {goal_text}")
+                    return f"Goal added — {goal_text}."
+                else:
+                    return "You've already got three goals set for today, Nine. Clear them first."
+            except Exception as e:
+                return f"Couldn't reach the goal system."
+
+    # Toggle goal done — "mark goal 1 done" / "check off goal 2"
+    if re.search(r'(mark|check off|complete|finish|done)\s+goal\s+\d', cmd):
+        match = re.search(r'(\d)', cmd)
+        if match:
+            idx = int(match.group(1)) - 1
+            try:
+                r = requests.post("http://localhost:5000/goals/toggle",
+                                  json={"index": idx}, timeout=3)
+                if r.json().get("status") == "ok":
+                    log_session(f"Goal {idx+1} toggled")
+                    return f"Goal {idx+1} updated."
+                else:
+                    return f"No goal at position {idx+1}, Nine."
+            except:
+                return "Couldn't update that goal."
+
+    # Clear goals — "clear my goals" / "reset goals"
+    if re.search(r'(clear|reset|wipe|delete)\s+(my\s+)?goals', cmd):
+        try:
+            requests.post("http://localhost:5000/goals/clear", timeout=3)
+            log_session("Daily goals cleared")
+            return "Goals cleared. Fresh slate."
+        except:
+            return "Couldn't clear goals right now."
+
+    # Read goals — "what are my goals"
+    if re.search(r'(what|show|list).*(my\s+)?goals', cmd):
+        try:
+            r = requests.get("http://localhost:5000/goals", timeout=3)
+            goals = r.json().get("goals", [])
+            if not goals:
+                return "No goals set for today. Say 'add a goal' followed by what you want to get done."
+            done = sum(1 for g in goals if g["done"])
+            lines = []
+            for i, g in enumerate(goals):
+                status = "done" if g["done"] else "pending"
+                lines.append(f"{i+1}. {g['text']} — {status}")
+            return f"Goals for today, {done} of {len(goals)} done. " + ". ".join(lines) + "."
+        except:
+            return "Couldn't pull your goals right now."
+
+    return None
+
+def handle_countdown_command(cmd):
+    """Handle countdown voice commands. Returns response string or None."""
+
+    # Add countdown — "count down to graduation on June 15th"
+    countdown_match = re.search(
+        r'(count down to|countdown to|add a? countdown to)\s+(.+?)\s+on\s+(.+)',
+        cmd, re.IGNORECASE
+    )
+    if not countdown_match:
+        countdown_match = re.search(
+            r'(count down to|countdown to)\s+(.+?)\s+(january|february|march|april|may|june|'
+            r'july|august|september|october|november|december|\d{1,2}/\d{1,2})',
+            cmd, re.IGNORECASE
+        )
+        if countdown_match:
+            label    = countdown_match.group(2).strip().title()
+            date_str = cmd[countdown_match.start(3):]
+        else:
+            label = date_str = None
+    else:
+        label    = countdown_match.group(2).strip().title()
+        date_str = countdown_match.group(3).strip()
+
+    if label and date_str:
+        parsed_date = dateparser.parse(date_str, settings={"PREFER_DATES_FROM": "future"})
+        if parsed_date:
+            from datetime import date as _date
+            iso_date  = parsed_date.strftime("%Y-%m-%d")
+            friendly  = parsed_date.strftime("%B %d, %Y")
+            days_left = (_date.fromisoformat(iso_date) - _date.today()).days
+            try:
+                r = requests.post("http://localhost:5000/countdown/add",
+                                  json={"label": label, "date": iso_date}, timeout=3)
+                if r.json().get("status") == "ok":
+                    log_session(f"Countdown: {label} → {friendly}")
+                    return f"Countdown set. {label} is {days_left} days away on {friendly}."
+                return "Couldn't add that countdown."
+            except:
+                return "Countdown system unavailable right now."
+        return "Couldn't parse that date, Nine. Try something like 'count down to graduation on June 15'."
+
+    # Delete countdown — "delete countdown 1"
+    del_match = re.search(r'(delete|remove|cancel)\s+countdown\s+(\d+)', cmd)
+    if del_match:
+        idx = int(del_match.group(2)) - 1
+        try:
+            r = requests.post("http://localhost:5000/countdown/delete",
+                              json={"index": idx}, timeout=3)
+            if r.json().get("status") == "ok":
+                log_session(f"Countdown {idx+1} deleted")
+                return f"Countdown {idx+1} removed."
+            return f"No countdown at that position."
+        except:
+            return "Couldn't delete that countdown."
+
+    return None
+
+# ─── COMMAND TRIGGERS ─────────────────────────────────────────────────────────
+TIMER_TRIGGERS = ["set a timer", "set timer", "timer for", "start a timer",
+                  "remind me in", "countdown", "count down"]
+TIMER_CANCEL_TRIGGERS = ["cancel the timer", "stop the timer", "clear the timer",
+                          "cancel timer", "stop timer", "reset timer"]
+CALENDAR_ADD_TRIGGERS = [
+    "add to my calendar", "add to the calendar", "on the calendar",
+    "on my calendar", "add a meeting", "add an appointment", "add appointment",
+    "schedule a", "schedule an", "put on my calendar", "put it on",
+    "add an event", "add event", "schedule meeting", "remind me about",
+    "book a", "add a", "add an", "calendar for", "calendar tomorrow",
+    "calendar today", "calendar on", "meeting on", "meeting tomorrow",
+    "meeting today", "appointment on", "appointment tomorrow",
+    "add an interview", "add a phone", "schedule an interview", "schedule a phone",
+    "interview on", "interview tomorrow", "interview at", "phone interview",
+    "phone screen", "add interview",
+    "add the game", "add a game", "magic game", "lightning game", "rays game",
+    "bucs game", "ducks game", "watch party", "add the match",
+]
+CALENDAR_TODAY_TRIGGERS = ["what's on my calendar", "what is on my calendar",
+                            "my calendar today", "what do i have today",
+                            "what's today's schedule", "any events today",
+                            "calendar today", "do i have anything"]
+GOALS_TRIGGERS = [
+    "add a goal", "add goal", "my goals", "what are my goals",
+    "show my goals", "list my goals", "mark goal", "check off goal",
+    "complete goal", "finish goal", "done goal", "clear my goals",
+    "reset goals", "wipe goals", "delete my goals",
+]
+COUNTDOWN_TRIGGERS = [
+    "count down to", "countdown to", "add a countdown", "add countdown",
+    "delete countdown", "remove countdown", "cancel countdown",
+]
+
+# ─── MAIN COMMAND HANDLER ─────────────────────────────────────────────────────
 def handle_command(command):
     command_lower = command.lower()
+
+    # ── GOALS ──
+    if any(t in command_lower for t in GOALS_TRIGGERS):
+        result = handle_goals_command(command_lower)
+        if result:
+            return result
+
+    # ── COUNTDOWN ──
+    if any(t in command_lower for t in COUNTDOWN_TRIGGERS):
+        result = handle_countdown_command(command_lower)
+        if result:
+            return result
+
+    # ── MODES ──
     if "gaming mode" in command_lower:
         gaming_mode()
+        log_session("Mode → GAMING")
         return "Gaming mode activated. Launching your setup, Nine."
 
-    if "sports mode" in command_lower:
+    if "sports mode" in command_lower or "take me to sports" in command_lower:
         set_ui_state(mode="sports")
+        log_session("Mode → SPORTS")
         return "Pulling up sports mode."
 
-    if any(p in command_lower for p in ["take me home", "go home", "home mode", "close that", "back to home"]):
+    if any(p in command_lower for p in ["take me home", "go home", "home mode", "back to home"]):
         set_ui_state(mode="home")
+        log_session("Mode → HOME")
         return "Going home."
 
-    # File manager
+    # ── TIMER ──
+    if any(t in command_lower for t in TIMER_CANCEL_TRIGGERS):
+        reset_ui_timer()
+        log_session("Timer cancelled")
+        return "Timer cleared."
+
+    if any(t in command_lower for t in TIMER_TRIGGERS):
+        # Guard: don't treat "count down to X" as timer
+        if any(t in command_lower for t in ["count down to", "countdown to"]):
+            result = handle_countdown_command(command_lower)
+            if result:
+                return result
+        seconds = parse_timer_seconds(command_lower)
+        if seconds and seconds > 0:
+            label = format_timer_label(seconds)
+            trigger_ui_timer(seconds, label)
+            if seconds >= 3600:
+                h = seconds // 3600
+                duration = f"{h} hour{'s' if h > 1 else ''}"
+            elif seconds >= 60:
+                m = seconds // 60
+                duration = f"{m} minute{'s' if m > 1 else ''}"
+            else:
+                duration = f"{seconds} second{'s' if seconds > 1 else ''}"
+            log_session(f"Timer set — {duration}")
+            return f"Timer set for {duration}."
+        return "How long do you want the timer for, Nine?"
+
+    # ── CALENDAR ──
+    if any(t in command_lower for t in CALENDAR_TODAY_TRIGGERS):
+        try:
+            r = requests.get("http://localhost:5000/calendar/today", timeout=3)
+            events = r.json().get("events", [])
+            if not events:
+                return "Nothing on the calendar today, Nine."
+            lines = [f"{e['time']} — {e['title']}" for e in events]
+            if len(lines) == 1:
+                return f"You've got one thing today — {lines[0]}."
+            return f"You've got {len(lines)} things today — {', '.join(lines)}."
+        except:
+            return "Couldn't pull the calendar right now."
+
+    CALENDAR_CONTEXT = ["calendar", "meeting", "appointment", "schedule", "event",
+                        "reminder", "book", "tomorrow", "friday", "monday", "tuesday",
+                        "wednesday", "thursday", "saturday", "sunday", "tonight",
+                        "today", "next week", "at noon", "at 9", "at 10", "at 11",
+                        "at 12", "pm", "am",
+                        "magic", "lightning", "rays", "buccaneers", "bucs", "ducks",
+                        "game", "match", "watch party",
+                        "interview", "phone interview", "phone screen", "job interview",
+                        "technical interview", "screening",
+                        ]
+    has_calendar_context = any(w in command_lower for w in CALENDAR_CONTEXT)
+
+    if has_calendar_context and any(t in command_lower for t in CALENDAR_ADD_TRIGGERS):
+        result = parse_calendar_add(command_lower)
+        if result:
+            date_str, time_str, title = result
+            success = add_calendar_event_from_voice(date_str, time_str, title)
+            if success:
+                try:
+                    t_obj = datetime.strptime(time_str, "%H:%M")
+                    spoken_time = t_obj.strftime("%I:%M %p").lstrip("0")
+                except:
+                    spoken_time = time_str
+                log_session(f"Event added: {title} on {date_str}")
+                return f"Done. {title} added for {date_str} at {spoken_time}."
+            return "Couldn't save that to the calendar, Nine."
+        return "Didn't catch the details on that — when and what's the event?"
+
+    # ── CALENDAR DELETE ──
+    if any(t in command_lower for t in CALENDAR_DELETE_TRIGGERS):
+        return delete_calendar_event_from_voice(command_lower)
+
+    # ── FILE MANAGER ──
     file_response = handle_file_request(command_lower)
     if file_response:
         return file_response
+
+    # ── SPORTS ──
     if is_score_request(command_lower):
         return handle_score_request(command_lower)
     if is_draft_request(command_lower):
@@ -932,9 +1416,13 @@ def handle_command(command):
         return get_team_news(command_lower)
     if is_upcoming_request(command_lower):
         return get_upcoming_events(command_lower)
+
+    # ── WEATHER ──
     weather_response = get_location_weather(command_lower)
     if weather_response:
         return weather_response
+
+    # ── DISCORD ──
     if is_discord_command(command_lower) and ("join" in command_lower or "voice" in command_lower):
         for key in DISCORD_VOICE_CHANNELS:
             if key in command_lower:
@@ -953,10 +1441,15 @@ def handle_command(command):
     if is_discord_command(command_lower):
         open_app("discord")
         return "Opening Discord."
+
+    # ── APPS ──
     for app in APPS:
         if app in command_lower and ("open" in command_lower or "launch" in command_lower or "start" in command_lower):
             open_app(app)
+            log_session(f"Opened {app}")
             return f"Opening {app}."
+
+    # ── WEBSITES ──
     if "open" in command_lower or "go to" in command_lower or "pull up" in command_lower:
         sites = {
             "youtube": "https://www.youtube.com", "google": "https://www.google.com",
@@ -968,11 +1461,20 @@ def handle_command(command):
             if site in command_lower:
                 webbrowser.open(sites[site])
                 return f"Opening {site}."
+
     return None
 
 def speak(text):
     global cypher_stopped
     text = clean_text_for_speech(text)
+    if not text or len(text.strip()) < 3:
+        print("Speak skipped — empty text.")
+        set_ui_state(status="standby")
+        return
+    if not any(c.isalpha() for c in text):
+        print(f"Speak skipped — no alphabetic content: {text}")
+        set_ui_state(status="standby")
+        return
     print(f"Cypher: {text}")
     set_ui_state(status="speaking", cypher_text=text)
     filepath = None
@@ -1023,8 +1525,6 @@ def speak(text):
 
 def ask_cypher(user_input):
     conversation_history.append({"role": "user", "content": user_input})
-
-    # Keywords that suggest live/current info needed
     web_triggers = [
         "news", "latest", "current", "today", "tonight", "happening",
         "recently", "just", "new", "update", "price", "stock",
@@ -1032,17 +1532,14 @@ def ask_cypher(user_input):
         "trending", "right now", "this week", "this month"
     ]
     use_web = any(t in user_input.lower() for t in web_triggers)
-
-    # Don't use web search for things we handle locally
     local_triggers = [
         "weather", "temperature", "score", "game", "rays", "lightning",
-        "bucs", "magic", "ducks", "time", "date", "open", "launch"
+        "bucs", "magic", "ducks", "time", "date", "open", "launch",
+        "timer", "calendar", "remind",
     ]
     if any(t in user_input.lower() for t in local_triggers):
         use_web = False
-
     tools = [{"type": "web_search_20250305", "name": "web_search"}] if use_web else []
-
     try:
         response = claude.messages.create(
             model="claude-haiku-4-5-20251001",
@@ -1060,7 +1557,6 @@ def ask_cypher(user_input):
     except Exception as e:
         print(f"Claude error: {e}")
         cypher_reply = "Something went wrong on my end, Nine."
-
     conversation_history.append({"role": "assistant", "content": cypher_reply})
     return cypher_reply
 
@@ -1068,9 +1564,28 @@ def greet_nine():
     weather = get_weather()
     games = get_todays_games()
     sports_line = format_sports_for_greeting(games)
+    calendar_line = ""
+    try:
+        r = requests.get("http://localhost:5000/calendar/today", timeout=3)
+        events = r.json().get("events", [])
+        if events:
+            def fmt_time(t):
+                try:
+                    return datetime.strptime(t, "%H:%M").strftime("%I:%M %p").lstrip("0")
+                except:
+                    return t
+            if len(events) == 1:
+                e = events[0]
+                calendar_line = f"You've got {e['title']} at {fmt_time(e['time'])} today."
+            else:
+                items = ", ".join([f"{e['title']} at {fmt_time(e['time'])}" for e in events])
+                calendar_line = f"You've got {len(events)} things today — {items}."
+    except:
+        pass
     weather_part = f"the weather is {weather}" if weather != "weather unavailable" else ""
     sports_part = sports_line if sports_line else ""
-    context_parts = [p for p in [weather_part, sports_part] if p]
+    calendar_part = calendar_line if calendar_line else ""
+    context_parts = [p for p in [weather_part, sports_part, calendar_part] if p]
     context_block = ". ".join(context_parts)
     greeting_prompt = (
         f"Give a brief, sharp and natural greeting to Nine. "
@@ -1078,6 +1593,7 @@ def greet_nine():
         f"Then include the time which is {get_current_time()}. Do not say any timezone label for the local time. "
         f"{context_block}. "
         f"If there is sports info include it naturally and conversationally — do not list it like a schedule, weave it in. If a game is live include the score. If a game is final mention the result. If upcoming mention the time. "
+        f"If there is calendar info mention it briefly. "
         f"End by asking how you can help. "
         f"Be direct and natural, cyberpunk edge, no theatrics. "
         f"Do not mention the date. Do not introduce yourself or mention your name."
@@ -1091,14 +1607,12 @@ def greet_nine():
     return response.content[0].text
 
 def transcribe_command(recording):
-    # Gate — if recording is mostly silence don't bother sending to Whisper
     if len(recording) == 0:
         return ""
     rms = np.sqrt(np.mean(recording.astype(np.float32) ** 2))
     if rms < 300:
         print(f"Skipped silent recording (RMS: {rms:.0f})")
         return ""
-
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
         sf.write(f.name, recording, SAMPLE_RATE)
         tmp_path = f.name
@@ -1122,37 +1636,28 @@ def transcribe_command(recording):
 def record_command():
     print("Listening for your command...")
     set_ui_state(status="listening")
-
-    CHUNK_SIZE = 480          # 30ms at 16000hz
-    SILENCE_THRESHOLD = 800   # RMS — raised to ignore keyboard clicks
-    SILENCE_DURATION = 1.5    # seconds of silence to stop
-    MAX_DURATION = 30         # max seconds to listen
-
+    CHUNK_SIZE = 480
+    SILENCE_THRESHOLD = 800
+    SILENCE_DURATION = 1.5
+    MAX_DURATION = 30
     frames = []
     silent_chunks = 0
     voiced_chunks = 0
     max_chunks = int(MAX_DURATION * SAMPLE_RATE / CHUNK_SIZE)
     silence_chunks_needed = int(SILENCE_DURATION * SAMPLE_RATE / CHUNK_SIZE)
-
     with sd.RawInputStream(samplerate=SAMPLE_RATE, channels=1, dtype='int16', blocksize=CHUNK_SIZE) as stream:
         while len(frames) < max_chunks:
             data, _ = stream.read(CHUNK_SIZE)
             chunk = np.frombuffer(data, dtype=np.int16)
             frames.append(chunk)
-
-            # RMS volume check
             rms = np.sqrt(np.mean(chunk.astype(np.float32) ** 2))
-
             if rms > SILENCE_THRESHOLD:
                 voiced_chunks += 1
                 silent_chunks = 0
             else:
                 silent_chunks += 1
-
-            # Require sustained speech before stopping — ignores brief clicks
             if voiced_chunks > 20 and silent_chunks >= silence_chunks_needed:
                 break
-
     audio = np.concatenate(frames) if frames else np.array([], dtype=np.int16)
     return audio
 
@@ -1200,7 +1705,10 @@ def handle_interaction():
                     break
                 action_response = handle_command(command)
                 if action_response:
-                    speak(action_response)
+                    if len(action_response.strip()) > 2 and any(c.isalpha() for c in action_response):
+                        speak(action_response)
+                    else:
+                        print(f"Skipped bad response: {action_response}")
                 else:
                     print("Cypher thinking...")
                     set_ui_state(status="thinking")
@@ -1212,7 +1720,7 @@ def handle_interaction():
     finally:
         cypher_active = False
 
-# ─── STREAM DECK HOTKEYS ───
+# ─── STREAM DECK HOTKEYS ──────────────────────────────────────────────────────
 def on_activate_hotkey():
     global last_detected, cypher_active
     if not cypher_active and not cypher_muted:
@@ -1269,12 +1777,10 @@ print("  ctrl+shift+q     → Kill Cypher")
 
 print("Cypher is online... Say 'Hey Jarvis' to activate!")
 
-# Audio settings
 CHUNK = 1280
 SAMPLE_RATE = 16000
 RECORD_SECONDS = 15
 
-# Cooldown
 last_detected = 0
 COOLDOWN = 10
 

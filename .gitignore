@@ -1,2 +1,52 @@
 venv/
 .env
+# ─── CYPHER .gitignore ───────────────────────────────────────────────────────
+
+# Environment — NEVER commit this
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Audio temp files
+cypher_*.mp3
+cypher_*.wav
+*.mp3
+*.wav
+
+# Cypher data files (personal data)
+calendar.json
+goals.json
+countdown.json
+session_log.json
+cypher_file_log.txt
+
+# VRM model (large binary, redistribute separately)
+*.vrm
+
+# Node
+node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
